@@ -16,7 +16,9 @@ from sqlalchemy import func, desc
 from database import engine, Base, get_db
 from models import (
     Lead, Customer, Opportunity, Quotation, Order,
-    TrackingEvent, CreditInfo, ActivityLog, Complaint
+    TrackingEvent, CreditInfo, ActivityLog, Complaint,
+    ALL_STATUSES, STATUS_LABELS, TRANSITION_REQUIREMENTS,
+    STATUS_NEW,
 )
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +26,8 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="跨境物流 CRM 系统", version="1.0")
 
 app.mount("/static", StaticFiles(directory=os.path.join(_BASE_DIR, "static")), name="static")
-jinja_env = Environment(loader=FileSystemLoader(os.path.join(_BASE_DIR, "templates")))
+jinja_env = Environment(loader=FileSystemLoader(os.path.join(_BASE_DIR, "templates")),
+                          extensions=["jinja2.ext.loopcontrols"])
 
 
 def render(name: str, request: Request, **kwargs):
@@ -114,7 +117,9 @@ def page_leads(request: Request, db: Session = Depends(get_db)):
 def page_customers(request: Request, db: Session = Depends(get_db)):
     """客户画像与商机"""
     customers = db.query(Customer).order_by(desc(Customer.avg_monthly_revenue)).all()
-    return render("customers.html", request, active_page="customers", customers=customers)
+    return render("customers.html", request, active_page="customers", customers=customers,
+                  all_statuses=ALL_STATUSES, status_labels=STATUS_LABELS,
+                  requirements=TRANSITION_REQUIREMENTS)
 
 
 @app.get("/quotation", response_class=HTMLResponse)
@@ -162,6 +167,109 @@ def page_analytics(request: Request, db: Session = Depends(get_db)):
 def page_ai(request: Request, db: Session = Depends(get_db)):
     """AI 智能助手 (ShareAI 能力集成)"""
     return render("ai_assistant.html", request, active_page="ai_assistant")
+
+
+@app.get("/customer/{cid}", response_class=HTMLResponse)
+def page_customer_detail(cid: int, request: Request, db: Session = Depends(get_db)):
+    """客户详情页 — 状态流转管理"""
+    cust = db.query(Customer).filter(Customer.id == cid).first()
+    if not cust:
+        return HTMLResponse("客户不存在", 404)
+    quotes = db.query(Quotation).filter(Quotation.customer_id == cid).order_by(desc(Quotation.created_at)).all()
+    orders = db.query(Order).filter(Order.customer_id == cid).order_by(desc(Order.created_at)).limit(10).all()
+    activities = db.query(ActivityLog).filter(ActivityLog.customer_id == cid).order_by(desc(ActivityLog.created_at)).limit(20).all()
+    credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
+    opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
+    current = cust.lifecycle_status
+    return render("customer_detail.html", request, active_page="customers",
+                  customer=cust, quotes=quotes, orders=orders, activities=activities,
+                  credit=credit, opportunities=opps,
+                  current_status_label=STATUS_LABELS.get(current, current),
+                  all_statuses=ALL_STATUSES, status_labels=STATUS_LABELS,
+                  requirements=TRANSITION_REQUIREMENTS)
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 状态流转
+# ═══════════════════════════════════════════════
+
+@app.post("/api/customer/{cid}/transition")
+def transition_customer(cid: int, to_status: str = Query(...),
+                        operator: str = Query("张晓明"),
+                        quotation_id: int = Query(None),
+                        negotiation_notes: str = Query(None),
+                        order_count: int = Query(None),
+                        churn_reason: str = Query(None),
+                        disqualify_reason: str = Query(None),
+                        remark: str = Query(None),
+                        db: Session = Depends(get_db)):
+    """客户状态流转 — 按文档定义的10状态规则执行"""
+    cust = db.query(Customer).filter(Customer.id == cid).first()
+    if not cust:
+        return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
+    current = cust.lifecycle_status
+    # 校验目标状态是否为有效的10个状态之一
+    if to_status not in ALL_STATUSES:
+        return JSONResponse({"ok": False, "msg": f"无效的状态: {to_status}"}, 400)
+    # 流转时的强校验（特定状态需要填写必填项）
+    reqs = TRANSITION_REQUIREMENTS.get(to_status, [])
+    for req in reqs:
+        if req == "quotation_id" and not quotation_id:
+            return JSONResponse({"ok": False, "msg": "流转到「已报价」必须关联报价单ID"}, 400)
+        if req == "negotiation_notes" and not negotiation_notes:
+            return JSONResponse({"ok": False, "msg": "流转到「商务谈判」必须填写谈判纪要"}, 400)
+        if req == "order_count" and not order_count:
+            return JSONResponse({"ok": False, "msg": "流转到「试单中」必须说明试单票数"}, 400)
+        if req == "churn_reason" and not churn_reason:
+            return JSONResponse({"ok": False, "msg": "流转到「已流失」必须填写流失原因"}, 400)
+        if req == "disqualify_reason" and not disqualify_reason:
+            return JSONResponse({"ok": False, "msg": "流转到「无效/关闭」必须填写无效原因"}, 400)
+    # 3. 执行流转
+    old_status = current
+    cust.lifecycle_status = to_status
+    cust.status_changed_at = _now()
+    cust.status_changed_by = operator
+    # 流转到新线索时回流公海池
+    if to_status == STATUS_NEW:
+        if cust.lead_id:
+            lead = db.query(Lead).filter(Lead.id == cust.lead_id).first()
+            if lead:
+                lead.owner = None
+                lead.status = STATUS_NEW
+                lead.auto_reclaim = False
+    # 记录活动
+    extra_parts = []
+    if quotation_id:
+        extra_parts.append(f"关联报价单#{quotation_id}")
+    if negotiation_notes:
+        extra_parts.append(f"谈判纪要: {negotiation_notes}")
+    if order_count:
+        extra_parts.append(f"试单票数: {order_count}票")
+    if churn_reason:
+        extra_parts.append(f"流失原因: {churn_reason}")
+    if disqualify_reason:
+        extra_parts.append(f"无效原因: {disqualify_reason}")
+    if remark:
+        extra_parts.append(f"备注: {remark}")
+    extra_str = (" | " + " | ".join(extra_parts)) if extra_parts else ""
+    log = ActivityLog(
+        customer_id=cid,
+        activity_type="status_change",
+        content=f"{STATUS_LABELS.get(old_status, old_status)} → {STATUS_LABELS.get(to_status, to_status)}{extra_str}",
+        status_from=old_status,
+        status_to=to_status,
+        created_by=operator,
+    )
+    db.add(log)
+    db.commit()
+    return {
+        "ok": True,
+        "from": old_status,
+        "from_label": STATUS_LABELS.get(old_status, old_status),
+        "to": to_status,
+        "to_label": STATUS_LABELS.get(to_status, to_status),
+        "msg": f"状态已更新: {STATUS_LABELS.get(old_status, '')} → {STATUS_LABELS.get(to_status, '')}"
+    }
 
 
 # ═══════════════════════════════════════════════

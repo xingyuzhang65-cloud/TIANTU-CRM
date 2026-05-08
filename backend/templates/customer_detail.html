@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <div>
+    <a href="/customers" style="color:var(--text-secondary);font-size:13px;">← 返回客户列表</a>
+    <h1 style="font-size:22px;margin-top:4px;">{{ customer.company_name }}</h1>
+  </div>
+  <button class="btn btn-primary" onclick="getAIInsight({{ customer.id }})">🤖 AI客户洞察</button>
+</div>
+
+<div style="display:flex;gap:16px;align-items:flex-start;">
+<!-- KYC 画像 -->
+<div class="panel" style="flex:1;min-width:0;">
+  <div class="panel-header">📋 客户画像 <span class="text-sm" style="font-weight:400;">ID: {{ customer.id }} · 负责人: {{ customer.status_changed_by or '未分配' }}</span></div>
+  <div class="panel-body">
+    <div class="grid-3">
+      <div><span class="text-muted">联系人</span><br><strong>{{ customer.contact_name or '-' }}</strong></div>
+      <div><span class="text-muted">电话</span><br>{{ customer.phone or '-' }}</div>
+      <div><span class="text-muted">邮箱</span><br>{{ customer.email or '-' }}</div>
+      <div><span class="text-muted">国家</span><br>{{ customer.country or '-' }}</div>
+      <div><span class="text-muted">主营品类</span><br><strong>{{ customer.main_category or '未填写' }}</strong></div>
+      <div><span class="text-muted">发货频率</span><br>{{ customer.shipping_frequency or '-' }}</div>
+      <div><span class="text-muted">常用路线</span><br>{{ customer.usual_routes or '-' }}</div>
+      <div><span class="text-muted">出口资质</span><br>{{ customer.export_qualification or '-' }}</div>
+      <div><span class="text-muted">月均货量/营收</span><br><strong>{{ customer.avg_monthly_volume or 0 }}方 / ¥{{ "{:,.0f}".format(customer.avg_monthly_revenue or 0) }}</strong></div>
+    </div>
+  </div>
+</div>
+
+<!-- 当前状态 — 固定在右上角 -->
+<div style="width:200px;flex-shrink:0;">
+  <div class="panel">
+    <div class="panel-header">🔄 客户状态</div>
+    <div class="panel-body" style="text-align:center;">
+      <div style="font-size:16px;font-weight:700;color:var(--primary-light);margin-bottom:6px;">{{ current_status_label }}</div>
+      <div class="text-sm" style="color:var(--text-secondary);margin-bottom:12px;">
+        {% if customer.status_changed_at %}{{ customer.status_changed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}无记录{% endif %}
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showStatusPicker()">✏️ 编辑状态</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="grid-2">
+  <!-- 商机列表 -->
+  <div class="panel">
+    <div class="panel-header">🎯 商机</div>
+    <div class="panel-body">
+      {% if opportunities %}
+      {% for o in opportunities %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <strong>{{ o.name }}</strong>
+        <span class="badge badge-blue" style="margin-left:6px;">{{ o.stage }}</span>
+        <span style="float:right;font-weight:600;">¥{{ "{:,.0f}".format(o.amount) }}</span>
+        <br><span class="text-sm">赢率: {{ o.win_probability }}% · 预计关闭: {{ o.expected_close_date }}</span>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="text-muted">暂无商机</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 授信信息 -->
+  <div class="panel">
+    <div class="panel-header">🛡️ 授信概况</div>
+    <div class="panel-body">
+      {% if credit %}
+      <div class="grid-2" style="margin-bottom:12px;">
+        <div><span class="text-muted">信用评分</span><br><strong style="color:{% if credit.credit_score>=700 %}var(--success){% elif credit.credit_score>=500 %}var(--warning){% else %}var(--danger){% endif %}">{{ credit.credit_score }}</strong></div>
+        <div><span class="text-muted">授信额度</span><br><strong>¥{{ "{:,.0f}".format(credit.credit_limit) }}</strong></div>
+        <div><span class="text-muted">当前欠款</span><br><strong style="color:{% if credit.balance_due>credit.credit_limit*0.7 %}var(--danger){% endif %}">¥{{ "{:,.0f}".format(credit.balance_due) }}</strong></div>
+        <div><span class="text-muted">账龄/账期</span><br>{{ credit.days_aged }}天 / {{ credit.payment_terms }}</div>
+      </div>
+      <p class="text-sm">{{ credit.risk_notes or '' }}</p>
+      {% else %}
+      <p class="text-muted">暂无授信记录</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <!-- 报价单 -->
+  <div class="panel">
+    <div class="panel-header">💰 报价记录</div>
+    <div class="panel-body" style="max-height:240px;overflow-y:auto;">
+      {% if quotes %}
+      {% for q in quotes %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <strong>{{ q.route_detail }}</strong>
+        <span class="badge badge-blue" style="margin-left:4px;">{{ q.route_type }}</span>
+        <span style="float:right;">¥{{ "{:,.0f}".format(q.total_price) }}</span>
+        <br><span class="text-sm">{{ q.cargo_type }} · {{ q.weight_kg }}kg/{{ q.volume_cbm }}cbm · {{ q.incoterms }} · 状态: {{ q.status }}</span>
+      </div>
+      {% endfor %}
+      {% else %}<p class="text-muted">暂无报价</p>{% endif %}
+    </div>
+  </div>
+
+  <!-- 最近运单 -->
+  <div class="panel">
+    <div class="panel-header">📦 最近运单</div>
+    <div class="panel-body" style="max-height:240px;overflow-y:auto;">
+      {% if orders %}
+      {% for o in orders %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <strong>{{ o.tracking_number }}</strong>
+        <span class="badge {% if o.has_exception %}badge-red{% elif o.status in ('delivered','arrived') %}badge-green{% else %}badge-blue{% endif %}" style="margin-left:4px;">{{ o.status }}</span>
+        <span style="float:right;" class="text-sm">{{ o.eta or '' }}</span>
+        <br><span class="text-sm">{{ o.cargo_desc }} · {{ o.route_detail }}</span>
+        {% if o.has_exception %}<br><span style="color:var(--danger);font-size:12px;">⚠ {{ o.exception_type }}</span>{% endif %}
+      </div>
+      {% endfor %}
+      {% else %}<p class="text-muted">暂无运单</p>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- 跟进记录 -->
+<div class="panel mt-4">
+  <div class="panel-header">📝 跟进记录与状态变更日志</div>
+  <div class="panel-body" style="max-height:400px;overflow-y:auto;">
+    {% if activities %}
+    {% for a in activities %}
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+      <div class="flex-between">
+        <div>
+          {% if a.activity_type == 'status_change' %}
+          <span class="badge badge-purple">🔄 状态流转</span>
+          {% elif a.activity_type == 'call' %}
+          <span class="badge badge-blue">📞 电话</span>
+          {% elif a.activity_type == 'meeting' %}
+          <span class="badge badge-green">🤝 会议</span>
+          {% elif a.activity_type == 'email' %}
+          <span class="badge badge-yellow">📧 邮件</span>
+          {% elif a.activity_type == 'quote' %}
+          <span class="badge badge-purple">💰 报价</span>
+          {% elif a.activity_type == 'complaint' %}
+          <span class="badge badge-red">⚠ 投诉</span>
+          {% else %}
+          <span class="badge badge-gray">{{ a.activity_type }}</span>
+          {% endif %}
+        </div>
+        <span class="text-sm">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      </div>
+      <div style="font-size:13px;margin-top:4px;">{{ a.content }}</div>
+      <div class="text-sm">操作人: {{ a.created_by }}</div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-muted">暂无跟进记录</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+var custId = {{ customer.id }};
+var allStatuses = {{ all_statuses | tojson }};
+var statusLabels = {{ status_labels | tojson }};
+var requirements = {{ requirements | tojson }};
+
+function showStatusPicker() {
+  let html = '<h3>编辑客户状态</h3>';
+  html += '<p style="margin-bottom:12px;"><span class="text-muted">当前:</span> <strong>' + (statusLabels['{{ customer.lifecycle_status }}'] || '{{ customer.lifecycle_status }}') + '</strong></p>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+  for (let i = 0; i < allStatuses.length; i++) {
+    let s = allStatuses[i];
+    let isCurrent = s === '{{ customer.lifecycle_status }}';
+    html += '<button class="btn ' + (isCurrent ? 'btn-primary' : 'btn-outline') + '"';
+    html += ' onclick="pickStatus(\'' + s + '\')">' + (statusLabels[s] || s) + '</button>';
+  }
+  html += '</div>';
+  openModal(html);
+}
+
+function pickStatus(toStatus) {
+  closeModal();
+  let reqs = requirements[toStatus] || [];
+  showTransitionForm(toStatus, reqs);
+}
+
+function showTransitionForm(toStatus, reqs) {
+  let extraFields = '';
+  if (reqs.indexOf('quotation_id') >= 0) {
+    extraFields += '<label>关联报价单ID <span style="color:var(--danger)">*必填</span></label><input type="number" id="quotation_id" placeholder="输入已创建的报价单编号" required>';
+  }
+  if (reqs.indexOf('negotiation_notes') >= 0) {
+    extraFields += '<label>谈判纪要 <span style="color:var(--danger)">*必填</span></label><textarea id="negotiation_notes" placeholder="记录谈判要点：价格/账期/赔付条款等" required></textarea>';
+  }
+  if (reqs.indexOf('order_count') >= 0) {
+    extraFields += '<label>试单票数 <span style="color:var(--danger)">*必填</span></label><input type="number" id="order_count" placeholder="客户计划试单的票数" required>';
+  }
+  if (reqs.indexOf('churn_reason') >= 0) {
+    extraFields += '<label>流失原因 <span style="color:var(--danger)">*必填</span></label><textarea id="churn_reason" placeholder="记录客户流失的具体原因（价格/服务/竞对等）" required></textarea>';
+  }
+  if (reqs.indexOf('disqualify_reason') >= 0) {
+    extraFields += '<label>无效原因 <span style="color:var(--danger)">*必填</span></label><textarea id="disqualify_reason" placeholder="记录核实为无效的具体原因（同行/号码错误/无业务等）" required></textarea>';
+  }
+  extraFields += '<label>备注 <span class="text-muted">(选填)</span></label><textarea id="remark" placeholder="补充说明..."></textarea>';
+
+  let html = '<h3>🔄 状态编辑</h3>';
+  html += '<p style="margin-bottom:12px;">目标: <strong style="color:var(--primary-light);">' + (statusLabels[toStatus] || toStatus) + '</strong></p>';
+  html += extraFields;
+  html += '<div style="margin-top:12px;">';
+  html += '<button class="btn btn-outline" onclick="closeModal()">取消</button> ';
+  html += '<button class="btn btn-primary" onclick="doTransition(\'' + toStatus + '\')">确认</button>';
+  html += '</div>';
+  openModal(html);
+}
+
+async function doTransition(toStatus) {
+  let params = new URLSearchParams();
+  params.set('to_status', toStatus);
+  params.set('operator', '张晓明');
+  let el;
+  el = document.getElementById('quotation_id'); if (el) params.set('quotation_id', el.value);
+  el = document.getElementById('negotiation_notes'); if (el) params.set('negotiation_notes', el.value);
+  el = document.getElementById('order_count'); if (el) params.set('order_count', el.value);
+  el = document.getElementById('churn_reason'); if (el) params.set('churn_reason', el.value);
+  el = document.getElementById('disqualify_reason'); if (el) params.set('disqualify_reason', el.value);
+  el = document.getElementById('remark'); if (el && el.value.trim()) params.set('remark', el.value.trim());
+  let r = await apiPost('/api/customer/' + custId + '/transition?' + params.toString());
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(() => location.reload(), 800); }
+  else showToast(r.msg, 'error');
+}
+
+async function getAIInsight(id) {
+  let r = await apiGet('/api/ai/customer_insight?customer_id=' + id);
+  if (!r.ok) return showToast('AI分析失败', 'error');
+  let insightItems = r.insights.map(i => '<p style="font-size:13px;margin:4px 0;">• ' + i + '</p>').join('');
+  breakItems = '<table><tbody>';
+  for (let [k,v] of Object.entries(r.score_breakdown)) {
+    breakItems += '<tr><td>' + k + '</td><td><div class="progress-bar" style="width:150px;"><div class="progress-fill ' + (v>=70?'progress-green':v>=40?'progress-yellow':'progress-red') + '" style="width:' + v + '%;"></div></div></td><td style="font-size:12px;">' + v + '分</td></tr>';
+  }
+  breakItems += '</tbody></table>';
+  let html = '<h3>🤖 AI客户洞察 — ' + r.customer_name + '</h3>';
+  html += '<div class="flex-between mb-4"><span>健康度: ' + r.health_score + '分</span><span style="color:' + r.risk_color + ';font-weight:600;">风险: ' + r.risk_level + '</span></div>';
+  html += '<div class="insight-card ' + (r.risk_level==='高'?'danger':'success') + '"><div class="title">综合诊断</div>' + insightItems + '</div>';
+  html += '<div class="mt-2"><strong>评分维度</strong></div>' + breakItems;
+  html += '<p class="mt-2"><strong>AI建议:</strong> ' + r.risk_action + '</p>';
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  openModal(html);
+}
+</script>
+{% endblock %}

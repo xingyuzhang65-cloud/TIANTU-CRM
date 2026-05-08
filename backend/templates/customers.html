@@ -1,46 +1,55 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="flex-between mb-4">
-  <h1 style="font-size:22px;">👥 客户画像与商机管理</h1>
-  <input type="text" id="searchInput" placeholder="搜索客户..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:250px;"
+<div class="flex-between mb-2">
+  <h1 style="font-size:22px;">👥 客户与商机管理</h1>
+  <input type="text" id="searchInput" placeholder="搜索客户..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:200px;"
     oninput="filterCustomers()">
+</div>
+<!-- 状态筛选 — 最右侧 -->
+<div style="text-align:right;margin-bottom:12px;">
+  <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+    <button class="btn btn-sm btn-outline status-filter" data-status="all">全部</button>
+    {% for s in all_statuses %}
+    <button class="btn btn-sm btn-outline status-filter" data-status="{{ s }}">{{ status_labels[s] }}</button>
+    {% endfor %}
+  </div>
 </div>
 
 {% for c in customers %}
-<div class="panel customer-card" data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}" style="margin-bottom:16px;">
-  <div class="panel-header" style="cursor:pointer;" onclick="showCustomerDetail({{ c.id }})">
+<div class="panel customer-card" data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}" data-status="{{ c.lifecycle_status }}" style="margin-bottom:14px;cursor:pointer;" onclick="location.href='/customer/{{ c.id }}'">
+  <div class="panel-header">
     <div>
-      <span style="font-size:16px;">{{ c.company_name }}</span>
-      <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}" style="margin-left:8px;">{{ c.customer_level }}级客户</span>
+      <span style="font-size:15px;">{{ c.company_name }}</span>
+      <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}" style="margin-left:6px;">{{ c.customer_level }}级</span>
       {% if c.health_score >= 80 %}<span class="badge badge-green">健康</span>
       {% elif c.health_score >= 60 %}<span class="badge badge-yellow">关注</span>
       {% else %}<span class="badge badge-red">预警</span>
       {% endif %}
     </div>
-    <span class="text-sm">月均 {{ "{:,.0f}".format(c.avg_monthly_revenue) }} 元 · 合作 {{ (c.cooperation_since|string)[:7] if c.cooperation_since else '-' }}</span>
+    <!-- 状态在右上角 -->
+    <button class="status-badge
+      {% if c.lifecycle_status == 'active' %}badge-green{% elif c.lifecycle_status in ('churned','disqualified') %}badge-red
+      {% elif c.lifecycle_status in ('nurturing','contacted','new') %}badge-blue
+      {% elif c.lifecycle_status in ('quoted','negotiating','trial') %}badge-purple
+      {% elif c.lifecycle_status == 'receding' %}badge-yellow
+      {% else %}badge-gray{% endif %}"
+      style="border:none;cursor:pointer;font-size:12px;padding:4px 12px;border-radius:12px;"
+      onclick="event.stopPropagation();showStatusPicker({{ c.id }}, '{{ c.lifecycle_status }}')">
+      {{ status_labels.get(c.lifecycle_status, c.lifecycle_status) }} ▾
+    </button>
   </div>
-  <div class="panel-body" style="padding:12px 20px;">
-    <div class="grid-3" style="grid-template-columns:repeat(4, 1fr);margin-bottom:8px;">
-      <div><span class="text-muted">主营品类</span><br><strong>{{ c.main_category or '未填写' }}</strong></div>
-      <div><span class="text-muted">发货频率</span><br><strong>{{ c.shipping_frequency or '-' }}</strong></div>
-      <div><span class="text-muted">常用路线</span><br><strong>{{ c.usual_routes or '-' }}</strong></div>
-      <div><span class="text-muted">月均货量</span><br><strong>{{ c.avg_monthly_volume or 0 }} 方</strong></div>
-    </div>
-    <div class="flex-between">
-      <div>
-        {% for route in (c.usual_routes or '').split(',') %}
-          {% if route %}<span class="route-chip">{{ route }}</span>{% endif %}
-        {% endfor %}
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();showCustomerDetail({{ c.id }})">
-        🤖 AI 客户洞察
-      </button>
-    </div>
-    <div style="margin-top:8px;">
-      <span class="text-sm">健康分 {{ c.health_score }}</span>
-      <div class="progress-bar" style="width:120px;display:inline-block;margin-left:8px;">
-        <div class="progress-fill {% if c.health_score>=80 %}progress-green{% elif c.health_score>=60 %}progress-yellow{% else %}progress-red{% endif %}"
-             style="width:{{ c.health_score }}%;"></div>
+  <div class="panel-body" style="padding:10px 20px;">
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div><span class="text-muted">品类</span><br>{{ c.main_category or '-' }}</div>
+      <div><span class="text-muted">发货频率</span><br>{{ c.shipping_frequency or '-' }}</div>
+      <div><span class="text-muted">路线</span><br>{{ c.usual_routes or '-' }}</div>
+      <div><span class="text-muted">月均货量</span><br>{{ c.avg_monthly_volume or 0 }}方</div>
+      <div><span class="text-muted">月均营收</span><br><strong>¥{{ "{:,.0f}".format(c.avg_monthly_revenue or 0) }}</strong></div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+        <span class="text-sm">健康分 {{ c.health_score }}</span>
+        <div class="progress-bar" style="width:80px;">
+          <div class="progress-fill {% if c.health_score>=80 %}progress-green{% elif c.health_score>=60 %}progress-yellow{% else %}progress-red{% endif %}" style="width:{{ c.health_score }}%;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -48,66 +57,118 @@
 {% endfor %}
 
 <script>
+var allStatuses = {{ all_statuses | tojson }};
+var statusLabels = {{ status_labels | tojson }};
+var requirements = {{ requirements | tojson }};
+
+// Default: show 待处理
+var defaultStatus = 'new';
+
+// Init filters
+document.querySelectorAll('.status-filter').forEach(btn => {
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    document.querySelectorAll('.status-filter').forEach(b => {
+      b.classList.remove('active');
+      b.style.background = ''; b.style.color = ''; b.style.borderColor = '';
+    });
+    this.classList.add('active');
+    this.style.background = 'var(--primary-light)';
+    this.style.color = '#fff';
+    this.style.borderColor = 'var(--primary-light)';
+    filterCustomers();
+  });
+  btn.style.cssText = btn.style.cssText + 'border-radius:20px;padding:4px 14px;font-size:12px;';
+});
+
+// Activate default filter
+let defaultBtn = document.querySelector('.status-filter[data-status="' + defaultStatus + '"]');
+if (defaultBtn) {
+  defaultBtn.classList.add('active');
+  defaultBtn.style.background = 'var(--primary-light)';
+  defaultBtn.style.color = '#fff';
+  defaultBtn.style.borderColor = 'var(--primary-light)';
+  // Remove active from "全部"
+  document.querySelector('.status-filter[data-status="all"]').classList.remove('active');
+}
+
+filterCustomers();
+
 function filterCustomers() {
   let q = document.getElementById('searchInput').value.toLowerCase();
+  let activeBtn = document.querySelector('.status-filter.active');
+  let status = activeBtn ? activeBtn.dataset.status : defaultStatus;
   document.querySelectorAll('.customer-card').forEach(c => {
-    c.style.display = c.dataset.search.toLowerCase().includes(q) ? '' : 'none';
+    let matchSearch = c.dataset.search.toLowerCase().includes(q);
+    let matchStatus = status === 'all' || c.dataset.status === status;
+    c.style.display = (matchSearch && matchStatus) ? '' : 'none';
   });
 }
-async function showCustomerDetail(id) {
-  let r = await apiGet('/api/customers/' + id);
-  if (!r.customer) return showToast('加载失败', 'error');
-  let c = r.customer;
-  let html = `<h3>${c.company_name} - AI客户洞察</h3>
-    <div class="grid-2" style="margin-bottom:12px;">
-      <div>
-        <strong>客户画像</strong>
-        <p class="text-muted mt-2">品类: ${c.main_category||'-'}</p>
-        <p class="text-muted">频率: ${c.shipping_frequency||'-'}</p>
-        <p class="text-muted">路线: ${c.usual_routes||'-'}</p>
-        <p class="text-muted">月均: ${(c.avg_monthly_revenue/10000).toFixed(1)}万元 / ${c.avg_monthly_volume||0}方</p>
-      </div>
-      <div>`;
-  if (r.credit) {
-    html += `<strong>授信概况</strong>
-        <p class="text-muted mt-2">信用分: ${r.credit.credit_score}</p>
-        <p class="text-muted">额度: ${(r.credit.credit_limit/10000).toFixed(0)}万</p>
-        <p class="text-muted">欠款: ${(r.credit.balance_due/10000).toFixed(1)}万</p>
-        <p class="text-muted">账龄: ${r.credit.days_aged}天</p>`;
+
+function showStatusPicker(cid, currentStatus) {
+  let html = '<h3>编辑客户状态</h3>';
+  html += '<p style="margin-bottom:12px;"><span class="text-muted">当前:</span> <strong>' + (statusLabels[currentStatus] || currentStatus) + '</strong></p>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+  for (let i = 0; i < allStatuses.length; i++) {
+    let s = allStatuses[i];
+    let isCurrent = s === currentStatus;
+    html += '<button class="btn ' + (isCurrent ? 'btn-primary' : 'btn-outline') + '"';
+    html += ' onclick="pickStatus(' + cid + ', \'' + s + '\')">' + (statusLabels[s] || s) + '</button>';
   }
-  html += `</div></div>`;
-  if (r.opportunities.length > 0) {
-    html += `<strong>商机列表</strong>`;
-    r.opportunities.forEach(o => {
-      html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
-        ${o.name} · 阶段: ${o.stage} · ¥${(o.amount/10000).toFixed(1)}万 · 赢率 ${o.win_probability}%
-      </div>`;
-    });
-  }
-  html += `<div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeModal()">关闭</button>
-      <button class="btn btn-primary" onclick="closeModal();getAIInsight(${id})">🤖 获取AI深度洞察</button>
-    </div>`;
+  html += '</div>';
   openModal(html);
 }
-async function getAIInsight(id) {
-  let r = await apiGet('/api/ai/customer_insight?customer_id=' + id);
-  if (!r.ok) return showToast('AI分析失败', 'error');
-  let html = `<h3>🤖 AI客户洞察 — ${r.customer_name}</h3>
-    <div class="flex-between mb-4"><span>健康度: ${r.health_score}分</span><span style="color:${r.risk_color}">风险等级: ${r.risk_level}</span></div>
-    <div class="insight-card ${r.risk_level==='高'?'danger':'success'}">
-      <div class="title">AI 综合诊断</div>`;
-  r.insights.forEach(i => { html += `<p style="font-size:13px;margin:4px 0;">• ${i}</p>`; });
-  html += `</div>
-    <div><strong>评分维度</strong></div>
-    <table><tbody>`;
-  for (let [k,v] of Object.entries(r.score_breakdown)) {
-    html += `<tr><td>${k}</td><td><div class="progress-bar" style="width:180px;"><div class="progress-fill ${v>=70?'progress-green':v>=40?'progress-yellow':'progress-red'}" style="width:${v}%;"></div></div></td><td>${v}分</td></tr>`;
+
+function pickStatus(cid, toStatus) {
+  closeModal();
+  let reqs = requirements[toStatus] || [];
+  let needsExtra = reqs.length > 0;
+  showTransitionForm(cid, toStatus, reqs);
+}
+
+function showTransitionForm(cid, toStatus, reqs) {
+  let extraFields = '';
+  if (reqs.indexOf('quotation_id') >= 0) {
+    extraFields += '<label>关联报价单ID <span style="color:var(--danger)">*必填</span></label><input type="number" id="quotation_id" placeholder="输入已创建的报价单编号" required>';
   }
-  html += `</tbody></table>
-    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button>
-    <button class="btn btn-primary" onclick="window.location.href='/ai-assistant'">在AI助手中深度分析</button></div>`;
+  if (reqs.indexOf('negotiation_notes') >= 0) {
+    extraFields += '<label>谈判纪要 <span style="color:var(--danger)">*必填</span></label><textarea id="negotiation_notes" placeholder="记录谈判要点：价格/账期/赔付条款等" required></textarea>';
+  }
+  if (reqs.indexOf('order_count') >= 0) {
+    extraFields += '<label>试单票数 <span style="color:var(--danger)">*必填</span></label><input type="number" id="order_count" placeholder="客户计划试单的票数" required>';
+  }
+  if (reqs.indexOf('churn_reason') >= 0) {
+    extraFields += '<label>流失原因 <span style="color:var(--danger)">*必填</span></label><textarea id="churn_reason" placeholder="记录客户流失的具体原因（价格/服务/竞对等）" required></textarea>';
+  }
+  if (reqs.indexOf('disqualify_reason') >= 0) {
+    extraFields += '<label>无效原因 <span style="color:var(--danger)">*必填</span></label><textarea id="disqualify_reason" placeholder="记录核实为无效的具体原因（同行/号码错误/无业务等）" required></textarea>';
+  }
+  extraFields += '<label>备注 <span class="text-muted">(选填)</span></label><textarea id="remark" placeholder="补充说明..."></textarea>';
+
+  let html = '<h3>🔄 状态编辑</h3>';
+  html += '<p style="margin-bottom:12px;">目标: <strong style="color:var(--primary-light);">' + (statusLabels[toStatus] || toStatus) + '</strong></p>';
+  html += extraFields;
+  html += '<div style="margin-top:12px;">';
+  html += '<button class="btn btn-outline" onclick="closeModal()">取消</button> ';
+  html += '<button class="btn btn-primary" onclick="doTransition(' + cid + ', \'' + toStatus + '\')">确认</button>';
+  html += '</div>';
   openModal(html);
+}
+
+async function doTransition(cid, toStatus) {
+  let params = new URLSearchParams();
+  params.set('to_status', toStatus);
+  params.set('operator', '张晓明');
+  let el;
+  el = document.getElementById('quotation_id'); if (el) params.set('quotation_id', el.value);
+  el = document.getElementById('negotiation_notes'); if (el) params.set('negotiation_notes', el.value);
+  el = document.getElementById('order_count'); if (el) params.set('order_count', el.value);
+  el = document.getElementById('churn_reason'); if (el) params.set('churn_reason', el.value);
+  el = document.getElementById('disqualify_reason'); if (el) params.set('disqualify_reason', el.value);
+  el = document.getElementById('remark'); if (el && el.value.trim()) params.set('remark', el.value.trim());
+  let r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(() => location.reload(), 800); }
+  else showToast(r.msg, 'error');
 }
 </script>
 {% endblock %}

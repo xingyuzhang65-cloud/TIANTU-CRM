@@ -10,6 +10,78 @@ def _now():
     return datetime.datetime.now()
 
 
+# ── 客户生命周期状态常量 ──
+# 一、潜客线索阶段
+STATUS_NEW = "new"               # 1. 待处理
+STATUS_CONTACTED = "contacted"   # 2. 跟进中
+STATUS_DISQUALIFIED = "disqualified"  # 3. 无效/关闭
+# 二、商机转化阶段
+STATUS_NURTURING = "nurturing"   # 4. 意向客户
+STATUS_QUOTED = "quoted"         # 5. 已报价
+STATUS_NEGOTIATING = "negotiating"  # 6. 商务谈判
+STATUS_TRIAL = "trial"           # 7. 试单中
+# 三、成交与存量阶段
+STATUS_ACTIVE = "active"         # 8. 正式合作
+STATUS_RECEDING = "receding"     # 9. 减量/休眠
+# 四、结束状态
+STATUS_CHURNED = "churned"       # 10. 已流失
+
+ALL_STATUSES = [
+    STATUS_NEW, STATUS_CONTACTED, STATUS_DISQUALIFIED,
+    STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING, STATUS_TRIAL,
+    STATUS_ACTIVE, STATUS_RECEDING, STATUS_CHURNED
+]
+
+STATUS_LABELS = {
+    STATUS_NEW: "待处理",
+    STATUS_CONTACTED: "跟进中",
+    STATUS_DISQUALIFIED: "无效/关闭",
+    STATUS_NURTURING: "意向客户",
+    STATUS_QUOTED: "已报价",
+    STATUS_NEGOTIATING: "商务谈判",
+    STATUS_TRIAL: "试单中",
+    STATUS_ACTIVE: "正式合作",
+    STATUS_RECEDING: "减量/休眠",
+    STATUS_CHURNED: "已流失",
+}
+
+STATUS_STAGE = {
+    STATUS_NEW: "潜客线索",
+    STATUS_CONTACTED: "潜客线索",
+    STATUS_DISQUALIFIED: "潜客线索",
+    STATUS_NURTURING: "商机转化",
+    STATUS_QUOTED: "商机转化",
+    STATUS_NEGOTIATING: "商机转化",
+    STATUS_TRIAL: "商机转化",
+    STATUS_ACTIVE: "成交存量",
+    STATUS_RECEDING: "成交存量",
+    STATUS_CHURNED: "结束",
+}
+
+# 状态流转规则: 当前状态 → 可流转到的下一个状态列表
+VALID_TRANSITIONS = {
+    STATUS_NEW:          [STATUS_CONTACTED, STATUS_DISQUALIFIED],
+    STATUS_CONTACTED:    [STATUS_NURTURING, STATUS_DISQUALIFIED],
+    STATUS_DISQUALIFIED: [],  # 终态
+    STATUS_NURTURING:    [STATUS_QUOTED, STATUS_DISQUALIFIED],
+    STATUS_QUOTED:       [STATUS_NEGOTIATING, STATUS_NURTURING],
+    STATUS_NEGOTIATING:  [STATUS_TRIAL, STATUS_QUOTED, STATUS_NURTURING],
+    STATUS_TRIAL:        [STATUS_ACTIVE, STATUS_NURTURING, STATUS_CHURNED],
+    STATUS_ACTIVE:       [STATUS_RECEDING, STATUS_CHURNED],
+    STATUS_RECEDING:     [STATUS_ACTIVE, STATUS_CHURNED],
+    STATUS_CHURNED:      [STATUS_NEW],  # 回流至公海池，重置为新线索
+}
+
+# 流转时需要必填的字段
+TRANSITION_REQUIREMENTS = {
+    STATUS_QUOTED:      ["quotation_id"],      # 必须关联报价单
+    STATUS_NEGOTIATING: ["negotiation_notes"],  # 必须填写谈判纪要
+    STATUS_TRIAL:       ["order_count"],        # 必须说明试单票数
+    STATUS_CHURNED:     ["churn_reason"],       # 必须填写流失原因
+    STATUS_DISQUALIFIED: ["disqualify_reason"], # 必须填写无效原因
+}
+
+
 # ── 1. 线索与公海池 ──
 class Lead(Base):
     __tablename__ = "leads"
@@ -21,7 +93,8 @@ class Lead(Base):
     source = Column(String(50), comment="独立站/社媒/展会/海关数据/转介绍")
     country = Column(String(100))
     product_interest = Column(String(200), comment="意向产品: 空派/海派/铁运/FBA头程")
-    status = Column(String(20), default="new", comment="new/contacted/quoted/trial/won/lost")
+    status = Column(String(20), default=STATUS_NEW,
+                   comment="new/contacted/disqualified — 潜客线索阶段三状态")
     owner = Column(String(100))
     assigned_at = Column(DateTime)
     last_followed = Column(DateTime)
@@ -51,10 +124,17 @@ class Customer(Base):
     customer_level = Column(String(20), default="C", comment="A/B/C/D")
     health_score = Column(Integer, default=70)
     cooperation_since = Column(Date)
+    # ── 生命周期状态 (10个状态贯穿潜客→商机→成交→结束) ──
+    lifecycle_status = Column(String(20), default=STATUS_NURTURING,
+                             comment="10阶段生命周期状态")
+    status_changed_at = Column(DateTime, comment="最近一次状态变更时间")
+    status_changed_by = Column(String(100), comment="最近一次状态变更人")
     created_at = Column(DateTime, default=_now)
     opportunities = relationship("Opportunity", back_populates="customer", cascade="all, delete-orphan")
     quotations = relationship("Quotation", back_populates="customer", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="customer", cascade="all, delete-orphan")
+    activities = relationship("ActivityLog", back_populates="customer", cascade="all, delete-orphan",
+                              foreign_keys="ActivityLog.customer_id")
 
 
 # ── 3. 商机 ──
@@ -155,11 +235,15 @@ class ActivityLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
-    activity_type = Column(String(30), comment="call/visit/meeting/email/quote/complaint")
+    activity_type = Column(String(30), comment="call/visit/meeting/email/quote/complaint/status_change")
     content = Column(Text)
+    # 状态流转记录
+    status_from = Column(String(20))
+    status_to = Column(String(20))
     created_by = Column(String(100))
     created_at = Column(DateTime, default=_now)
     lead = relationship("Lead", back_populates="activities")
+    customer = relationship("Customer", back_populates="activities", foreign_keys=[customer_id])
 
 
 # ── 8. 投诉索赔 ──
