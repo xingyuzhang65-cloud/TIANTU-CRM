@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">🛡️ 风控与授信管理</h1>
+  <span class="text-muted">{{ credits|length }} 家客户授信记录</span>
+</div>
+
+<div class="panel">
+  <div class="panel-body table-wrap">
+    <table>
+      <thead>
+        <tr><th>客户</th><th>信用评分</th><th>授信额度</th><th>当前欠款</th><th>付款账期</th><th>账龄(天)</th><th>使用率</th><th>风险状态</th><th>备注</th></tr>
+      </thead>
+      <tbody>
+        {% for c in credits %}
+        {% set usage = (c.balance_due / c.credit_limit * 100) if c.credit_limit > 0 else 0 %}
+        <tr>
+          <td><strong>{{ c.customer.company_name if c.customer else '客户#'~c.customer_id }}</strong></td>
+          <td>
+            <div class="flex-between" style="gap:8px;">
+              <span style="font-weight:600;color:{% if c.credit_score>=700 %}var(--success){% elif c.credit_score>=500 %}var(--warning){% else %}var(--danger){% endif %}">{{ c.credit_score }}</span>
+              <div class="progress-bar" style="width:80px;">
+                <div class="progress-fill {% if c.credit_score>=700 %}progress-green{% elif c.credit_score>=500 %}progress-yellow{% else %}progress-red{% endif %}" style="width:{{ c.credit_score/1000*100 }}%;"></div>
+              </div>
+            </div>
+          </td>
+          <td>¥{{ "{:,.0f}".format(c.credit_limit) }}</td>
+          <td><span style="color:{% if c.balance_due > c.credit_limit*0.7 %}var(--danger){% endif %}">¥{{ "{:,.0f}".format(c.balance_due) }}</span></td>
+          <td>{{ c.payment_terms }}</td>
+          <td>
+            <span class="{% if c.days_aged > 60 %}status-danger{% elif c.days_aged > 30 %}status-warning{% else %}status-active{% endif %}">
+              {{ c.days_aged }}
+            </span>
+          </td>
+          <td>
+            <div class="progress-bar" style="width:100px;">
+              <div class="progress-fill {% if usage>80 %}progress-red{% elif usage>50 %}progress-yellow{% else %}progress-green{% endif %}" style="width:{{ [usage, 100]|min }}%;"></div>
+            </div>
+            <span class="text-sm">{{ "{:.0f}".format(usage) }}%</span>
+          </td>
+          <td>
+            {% if c.days_aged > 60 %}
+            <span class="badge badge-red">高风险</span>
+            {% elif c.days_aged > 30 %}
+            <span class="badge badge-yellow">需关注</span>
+            {% elif c.is_blacklisted %}
+            <span class="badge badge-red">黑名单</span>
+            {% else %}
+            <span class="badge badge-green">正常</span>
+            {% endif %}
+          </td>
+          <td class="text-sm" style="max-width:180px;">{{ c.risk_notes or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 风险统计 -->
+<div class="grid-2 mt-4">
+  <div class="panel">
+    <div class="panel-header">💰 应收账款汇总</div>
+    <div class="panel-body">
+      {% set total_due = namespace(val=0) %}
+      {% set overdue = namespace(val=0) %}
+      {% for c in credits %}
+        {% set total_due.val = total_due.val + c.balance_due %}
+        {% if c.days_aged > 30 %}
+          {% set overdue.val = overdue.val + c.balance_due %}
+        {% endif %}
+      {% endfor %}
+      <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card"><div class="label">总应收</div><div class="value">¥{{ "{:,.0f}".format(total_due.val) }}</div></div>
+        <div class="stat-card danger"><div class="label">超期应收</div><div class="value">¥{{ "{:,.0f}".format(overdue.val) }}</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">⚠ 风险客户</div>
+    <div class="panel-body">
+      {% for c in credits %}
+        {% if c.days_aged > 30 %}
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <strong>{{ c.customer.company_name if c.customer else '客户#'~c.customer_id }}</strong>
+          <span class="text-sm"> · 欠款 ¥{{ "{:,.0f}".format(c.balance_due) }} · 账龄 {{ c.days_aged }}天</span>
+          <span class="badge badge-yellow" style="float:right;">需催收</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+      {% if overdue.val == 0 %}<p class="text-muted">当前无超期应收</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

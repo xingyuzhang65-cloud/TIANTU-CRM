@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">💰 报价管理</h1>
+  <button class="btn btn-primary" onclick="showSmartQuote()">🤖 AI智能报价</button>
+</div>
+
+<div class="panel">
+  <div class="panel-body table-wrap">
+    <table>
+      <thead>
+        <tr><th>客户</th><th>运输方式</th><th>路线</th><th>货物类型</th><th>重量(KG)</th><th>体积(CBM)</th><th>总价</th><th>贸易条款</th><th>有效期</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        {% for q in quotes %}
+        <tr>
+          <td><strong>{{ q.customer.company_name if q.customer else '客户#' ~ q.customer_id }}</strong></td>
+          <td><span class="badge badge-blue">{{ q.route_type }}</span></td>
+          <td>{{ q.route_detail }}</td>
+          <td>{{ q.cargo_type }}</td>
+          <td>{{ q.weight_kg }}</td>
+          <td>{{ q.volume_cbm }}</td>
+          <td><strong>¥{{ "{:,.0f}".format(q.total_price) }}</strong></td>
+          <td><span class="badge badge-purple">{{ q.incoterms }}</span></td>
+          <td class="text-sm">{{ q.valid_until }}</td>
+          <td>
+            {% if q.status == 'accepted' %}<span class="badge badge-green">已接受</span>
+            {% elif q.status == 'sent' %}<span class="badge badge-blue">已发出</span>
+            {% elif q.status == 'pending' %}<span class="badge badge-yellow">待处理</span>
+            {% elif q.status == 'expired' %}<span class="badge badge-red">已过期</span>
+            {% else %}{{ q.status }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function showSmartQuote() {
+  let html = `<h3>🤖 AI智能报价</h3>
+    <label>运输方式</label><select id="routeType"><option>海派</option><option>空派</option><option>铁运</option><option>卡航</option></select>
+    <label>货物重量 (KG)</label><input type="number" id="weight" value="1000">
+    <label>体积 (CBM)</label><input type="number" id="volume" value="5">
+    <label>货物类型</label><select id="cargoType"><option>普货</option><option>带电产品</option><option>重货</option><option>纺织品</option><option>敏感品</option></select>
+    <label>贸易条款</label><select id="incoterms"><option>FOB</option><option>CIF</option><option>DDP</option><option>FCA</option></select>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="getSmartQuote()">获取AI报价</button>
+    </div>`;
+  openModal(html);
+}
+async function getSmartQuote() {
+  let p = {
+    route_type: document.getElementById('routeType').value,
+    weight: document.getElementById('weight').value,
+    volume: document.getElementById('volume').value,
+    cargo_type: document.getElementById('cargoType').value,
+    incoterms: document.getElementById('incoterms').value,
+  };
+  let qs = new URLSearchParams(p).toString();
+  let r = await apiGet('/api/ai/smart_quote?' + qs);
+  let b = r.breakdown;
+  let html = `<h3>🤖 AI报价结果 — ${r.route_type}</h3>
+    <div class="grid-2 mb-4">
+      <div><strong>计费重</strong><br><span style="font-size:20px;">${r.chargeable_weight} kg</span></div>
+      <div><strong>预估运费</strong><br><span style="font-size:24px;color:var(--primary-light);">¥${r.estimated_price.toLocaleString()}</span></div>
+    </div>
+    <table><thead><tr><th>费用项</th><th>金额 (¥)</th></tr></thead><tbody>
+      <tr><td>基础运费</td><td>${b.base_freight.toLocaleString()}</td></tr>
+      <tr><td>燃油附加费</td><td>${b.fuel_surcharge.toLocaleString()}</td></tr>
+      ${b.customs_fee > 0 ? `<tr><td>报关费</td><td>${b.customs_fee.toLocaleString()}</td></tr>` : ''}
+      <tr><td><strong>预估总价</strong></td><td><strong>¥${b.estimated_total.toLocaleString()}</strong></td></tr>
+    </tbody></table>
+    <div class="insight-card success mt-4"><div class="title">💰 市场对比</div>行业均价: ¥${r.market_comparison['行业均价'].toLocaleString()} · 节约比例: ${r.market_comparison['节约比例']}</div>
+    <p class="text-sm mt-2">报价有效期至: ${r.valid_until}</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">关闭</button>
+      <button class="btn btn-success" onclick="closeModal();showToast('报价单已生成并发送给客户')">✅ 确认生成报价单</button>
+    </div>`;
+  openModal(html);
+}
+</script>
+{% endblock %}

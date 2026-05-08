@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">📍 轨迹追踪与客户服务</h1>
+  <span class="text-muted">运单总数: {{ orders|length }}</span>
+</div>
+
+{% for o in orders %}
+<div class="panel" style="margin-bottom:16px;">
+  <div class="panel-header" style="cursor:pointer;" onclick="showTracking({{ o.id }})">
+    <div>
+      <span style="font-size:15px;font-weight:700;">{{ o.tracking_number }}</span>
+      <span class="badge {% if o.status in ('delivered','arrived') %}badge-green{% elif o.has_exception %}badge-red{% elif o.status in ('transit','departed') %}badge-blue{% else %}badge-yellow{% endif %}" style="margin-left:8px;">
+        {% if o.has_exception %}⚠ {{ o.exception_type or '异常' }}
+        {% elif o.status == 'received' %}已收件
+        {% elif o.status == 'warehouse' %}已入仓
+        {% elif o.status == 'departed' %}已出发
+        {% elif o.status == 'customs' %}清关中
+        {% elif o.status == 'transit' %}运输中
+        {% elif o.status == 'arrived' %}已抵达
+        {% elif o.status == 'delivered' %}已签收
+        {% else %}{{ o.status }}
+        {% endif %}
+      </span>
+    </div>
+    <span class="text-sm">{{ o.route_detail }} · ETA: {{ o.eta }}</span>
+  </div>
+  <div class="panel-body" style="padding:12px 20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+    <div><span class="text-muted">客户</span><br><strong>{{ o.customer.company_name if o.customer else '客户#'~o.customer_id }}</strong></div>
+    <div><span class="text-muted">货物</span><br>{{ o.cargo_desc }}</div>
+    <div><span class="text-muted">重量/体积</span><br>{{ o.weight_kg }}kg / {{ o.volume_cbm }}cbm</div>
+    <div><span class="text-muted">起止</span><br>{{ o.origin or '-' }} → {{ o.destination or '-' }}</div>
+    <div style="margin-left:auto;">
+      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();showTracking({{ o.id }})">📍 查看轨迹</button>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% if complaints %}
+<div class="panel">
+  <div class="panel-header">📝 投诉与索赔</div>
+  <div class="panel-body table-wrap">
+    <table>
+      <thead><tr><th>类型</th><th>描述</th><th>索赔金额</th><th>状态</th><th>处理结果</th></tr></thead>
+      <tbody>
+      {% for c in complaints %}
+        <tr>
+          <td><span class="badge {% if c.complaint_type=='customs' %}badge-yellow{% else %}badge-red{% endif %}">{{ c.complaint_type }}</span></td>
+          <td>{{ c.description[:60] }}{% if c.description|length>60 %}...{% endif %}</td>
+          <td>¥{{ "{:,.0f}".format(c.claim_amount) }}</td>
+          <td><span class="badge {% if c.status=='resolved' %}badge-green{% elif c.status=='closed' %}badge-gray{% else %}badge-yellow{% endif %}">{{ c.status }}</span></td>
+          <td class="text-sm">{{ c.resolution or '处理中...' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+async function showTracking(id) {
+  let r = await apiGet('/api/tracking/' + id);
+  if (!r.ok) return showToast('加载失败', 'error');
+  let o = r.order;
+  let html = `<h3>📍 轨迹详情 — ${o.tracking_number}</h3>
+    <div class="panel" style="background:#f8fafc;margin-top:12px;">
+      <div class="panel-body">
+        <p><strong>路线:</strong> ${o.route_detail} | <strong>ETD:</strong> ${o.etd} | <strong>ETA:</strong> ${o.eta}</p>
+        <p><strong>状态:</strong> <span class="badge ${o.has_exception?'badge-red':'badge-blue'}">${o.status}</span>
+        ${o.has_exception ? ' <strong>异常:</strong> ' + (o.exception_type||'') : ''}</p>
+      </div>
+    </div>
+    <div class="timeline">`;
+  r.events.forEach(e => {
+    html += `<div class="timeline-item ${e.event_type=='exception'?'exception':''}">
+      <div class="time">${e.time}</div>
+      <div class="desc"><strong>${e.event_type}</strong> · ${e.location}</div>
+      <div class="text-sm">${e.description}</div>
+    </div>`;
+  });
+  if (r.events.length === 0) html += '<p class="text-muted">暂无轨迹记录</p>';
+  html += `</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">关闭</button>
+      ${o.has_exception ? '<button class="btn btn-success" onclick="closeModal();showToast(\'已通知操作团队加急处理\')">🚨 上报处理</button>' : ''}
+    </div>`;
+  openModal(html);
+}
+</script>
+{% endblock %}

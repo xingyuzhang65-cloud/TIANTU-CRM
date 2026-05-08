@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">📈 经营分析看板</h1>
+  <button class="btn btn-primary" onclick="loadAIAnalysis()">🤖 AI经营诊断</button>
+</div>
+
+<div id="analyticsSummary"></div>
+
+<div class="grid-2 mt-4">
+  <div class="panel">
+    <div class="panel-header">📊 客户等级分布</div>
+    <div class="panel-body">
+      <canvas id="levelChart" height="200"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">🚢 航线货量分布</div>
+    <div class="panel-body" style="max-height:280px;overflow-y:auto;">
+      {% for r in route_stats %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <span style="font-size:13px;">{{ r[0] }}</span>
+          <span style="font-size:13px;font-weight:600;">{{ r[1] }} 票 / {{ "%.1f"|format(r[2] or 0) }} kg</span>
+        </div>
+        <div class="progress-bar mt-1">
+          {% set max_count = route_stats[0][1] if route_stats else 1 %}
+          <div class="progress-fill progress-green" style="width:{{ (r[1] / max_count * 100) if max_count > 0 else 0 }}%;"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-4">
+  <div class="panel-header">⚠ 客户流失预警</div>
+  <div class="panel-body table-wrap">
+    {% if churn_risk %}
+    <table>
+      <thead><tr><th>客户</th><th>健康分</th><th>等级</th><th>月均营收</th><th>风险因素</th><th>AI建议</th></tr></thead>
+      <tbody>
+      {% for c in churn_risk %}
+        <tr>
+          <td><strong>{{ c.company_name }}</strong></td>
+          <td><span class="status-danger">{{ c.health_score }}</span></td>
+          <td>{{ c.customer_level }}</td>
+          <td>¥{{ "{:,.0f}".format(c.avg_monthly_revenue or 0) }}</td>
+          <td>
+            {% if c.health_score < 50 %}⚠ 严重下滑{% elif c.health_score < 60 %}❗ 持续走低{% else %}📉 轻微波动{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-primary btn-sm" onclick="getAIInsight({{ c.id }})">AI诊断</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">目前无流失预警客户 ✅</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Load summary
+(async function() {
+  let r = await apiGet('/api/analytics/summary');
+  let html = '<div class="stats-grid">';
+  r.cards.forEach(c => {
+    let cls = c.title.includes('应收') ? 'warning' : '';
+    html += `<div class="stat-card ${cls}"><div class="label">${c.title}</div><div class="value">${c.value}</div><div class="sub">${c.sub}</div></div>`;
+  });
+  html += '</div>';
+  document.getElementById('analyticsSummary').innerHTML = html;
+})();
+
+// Customer level pie
+new Chart(document.getElementById('levelChart'), {
+  type: 'doughnut',
+  data: {
+    labels: {{ level_stats | map(attribute=0) | list | tojson }},
+    datasets: [{ data: {{ level_stats | map(attribute=1) | list | tojson }},
+      backgroundColor: ['#10b981','#3b82f6','#f59e0b','#94a3b8'] }]
+  },
+  options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+});
+
+async function getAIInsight(id) {
+  let r = await apiGet('/api/ai/customer_insight?customer_id=' + id);
+  let html = `<h3>🤖 AI流失诊断 — ${r.customer_name}</h3>
+    <p><strong>健康分:</strong> ${r.health_score} · <strong>风险:</strong> <span style="color:${r.risk_color}">${r.risk_level}</span></p>
+    ${r.insights.map(i => '<p style="font-size:13px;margin:4px 0;">• ' + i + '</p>').join('')}
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>`;
+  openModal(html);
+}
+
+async function loadAIAnalysis() {
+  let r = await apiGet('/api/analytics/summary');
+  let churn = await apiGet('/api/ai/churn_prediction');
+  let html = `<h3>🤖 AI经营诊断报告</h3>
+    <div class="insight-card"><div class="title">📊 核心指标</div>` +
+    r.cards.map(c => `<span style="display:inline-block;margin:4px 12px;"><strong>${c.title}:</strong> ${c.value}</span>`).join('') +
+    `</div>
+    <div class="insight-card ${churn.high_risk_count > 0 ? 'danger' : 'success'}">
+      <div class="title">⚠ 流失预警</div>
+      <p>高风险客户: <strong>${churn.high_risk_count}</strong> 家</p>
+      <div style="max-height:200px;overflow-y:auto;">`;
+  churn.items.forEach(i => {
+    html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+      <strong>${i.company_name}</strong> · 风险分: ${i.risk_score} · ${i.factors.join(', ')} · <span style="color:var(--primary-light)">${i.action}</span>
+    </div>`;
+  });
+  html += `</div></div>
+    <div class="insight-card success"><div class="title">💡 AI建议</div>
+      <p>• 优先跟进流失预警客户，安排本周内电话/拜访</p>
+      <p>• B级客户中活跃度下降的客户建议发送季度促销方案</p>
+      <p>• 东南亚航线需求增长明显，建议加速拓展该线运力资源</p>
+    </div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>`;
+  openModal(html);
+}
+</script>
+{% endblock %}

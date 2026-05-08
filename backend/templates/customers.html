@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">👥 客户画像与商机管理</h1>
+  <input type="text" id="searchInput" placeholder="搜索客户..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:250px;"
+    oninput="filterCustomers()">
+</div>
+
+{% for c in customers %}
+<div class="panel customer-card" data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}" style="margin-bottom:16px;">
+  <div class="panel-header" style="cursor:pointer;" onclick="showCustomerDetail({{ c.id }})">
+    <div>
+      <span style="font-size:16px;">{{ c.company_name }}</span>
+      <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}" style="margin-left:8px;">{{ c.customer_level }}级客户</span>
+      {% if c.health_score >= 80 %}<span class="badge badge-green">健康</span>
+      {% elif c.health_score >= 60 %}<span class="badge badge-yellow">关注</span>
+      {% else %}<span class="badge badge-red">预警</span>
+      {% endif %}
+    </div>
+    <span class="text-sm">月均 {{ "{:,.0f}".format(c.avg_monthly_revenue) }} 元 · 合作 {{ (c.cooperation_since|string)[:7] if c.cooperation_since else '-' }}</span>
+  </div>
+  <div class="panel-body" style="padding:12px 20px;">
+    <div class="grid-3" style="grid-template-columns:repeat(4, 1fr);margin-bottom:8px;">
+      <div><span class="text-muted">主营品类</span><br><strong>{{ c.main_category or '未填写' }}</strong></div>
+      <div><span class="text-muted">发货频率</span><br><strong>{{ c.shipping_frequency or '-' }}</strong></div>
+      <div><span class="text-muted">常用路线</span><br><strong>{{ c.usual_routes or '-' }}</strong></div>
+      <div><span class="text-muted">月均货量</span><br><strong>{{ c.avg_monthly_volume or 0 }} 方</strong></div>
+    </div>
+    <div class="flex-between">
+      <div>
+        {% for route in (c.usual_routes or '').split(',') %}
+          {% if route %}<span class="route-chip">{{ route }}</span>{% endif %}
+        {% endfor %}
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();showCustomerDetail({{ c.id }})">
+        🤖 AI 客户洞察
+      </button>
+    </div>
+    <div style="margin-top:8px;">
+      <span class="text-sm">健康分 {{ c.health_score }}</span>
+      <div class="progress-bar" style="width:120px;display:inline-block;margin-left:8px;">
+        <div class="progress-fill {% if c.health_score>=80 %}progress-green{% elif c.health_score>=60 %}progress-yellow{% else %}progress-red{% endif %}"
+             style="width:{{ c.health_score }}%;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+function filterCustomers() {
+  let q = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('.customer-card').forEach(c => {
+    c.style.display = c.dataset.search.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+async function showCustomerDetail(id) {
+  let r = await apiGet('/api/customers/' + id);
+  if (!r.customer) return showToast('加载失败', 'error');
+  let c = r.customer;
+  let html = `<h3>${c.company_name} - AI客户洞察</h3>
+    <div class="grid-2" style="margin-bottom:12px;">
+      <div>
+        <strong>客户画像</strong>
+        <p class="text-muted mt-2">品类: ${c.main_category||'-'}</p>
+        <p class="text-muted">频率: ${c.shipping_frequency||'-'}</p>
+        <p class="text-muted">路线: ${c.usual_routes||'-'}</p>
+        <p class="text-muted">月均: ${(c.avg_monthly_revenue/10000).toFixed(1)}万元 / ${c.avg_monthly_volume||0}方</p>
+      </div>
+      <div>`;
+  if (r.credit) {
+    html += `<strong>授信概况</strong>
+        <p class="text-muted mt-2">信用分: ${r.credit.credit_score}</p>
+        <p class="text-muted">额度: ${(r.credit.credit_limit/10000).toFixed(0)}万</p>
+        <p class="text-muted">欠款: ${(r.credit.balance_due/10000).toFixed(1)}万</p>
+        <p class="text-muted">账龄: ${r.credit.days_aged}天</p>`;
+  }
+  html += `</div></div>`;
+  if (r.opportunities.length > 0) {
+    html += `<strong>商机列表</strong>`;
+    r.opportunities.forEach(o => {
+      html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        ${o.name} · 阶段: ${o.stage} · ¥${(o.amount/10000).toFixed(1)}万 · 赢率 ${o.win_probability}%
+      </div>`;
+    });
+  }
+  html += `<div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">关闭</button>
+      <button class="btn btn-primary" onclick="closeModal();getAIInsight(${id})">🤖 获取AI深度洞察</button>
+    </div>`;
+  openModal(html);
+}
+async function getAIInsight(id) {
+  let r = await apiGet('/api/ai/customer_insight?customer_id=' + id);
+  if (!r.ok) return showToast('AI分析失败', 'error');
+  let html = `<h3>🤖 AI客户洞察 — ${r.customer_name}</h3>
+    <div class="flex-between mb-4"><span>健康度: ${r.health_score}分</span><span style="color:${r.risk_color}">风险等级: ${r.risk_level}</span></div>
+    <div class="insight-card ${r.risk_level==='高'?'danger':'success'}">
+      <div class="title">AI 综合诊断</div>`;
+  r.insights.forEach(i => { html += `<p style="font-size:13px;margin:4px 0;">• ${i}</p>`; });
+  html += `</div>
+    <div><strong>评分维度</strong></div>
+    <table><tbody>`;
+  for (let [k,v] of Object.entries(r.score_breakdown)) {
+    html += `<tr><td>${k}</td><td><div class="progress-bar" style="width:180px;"><div class="progress-fill ${v>=70?'progress-green':v>=40?'progress-yellow':'progress-red'}" style="width:${v}%;"></div></div></td><td>${v}分</td></tr>`;
+  }
+  html += `</tbody></table>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button>
+    <button class="btn btn-primary" onclick="window.location.href='/ai-assistant'">在AI助手中深度分析</button></div>`;
+  openModal(html);
+}
+</script>
+{% endblock %}

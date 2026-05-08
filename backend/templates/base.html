@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨境物流CRM - ShareAI</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>🚢 跨境物流CRM</h2>
+      <div class="sub">Powered by ShareAI 智能引擎</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="{{ 'active' if active_page == 'dashboard' else '' }}">
+        <span class="icon">📊</span> 经营仪表盘
+      </a>
+      <a href="/leads" class="{{ 'active' if active_page == 'leads' else '' }}">
+        <span class="icon">🎯</span> 线索公海池
+      </a>
+      <a href="/customers" class="{{ 'active' if active_page == 'customers' else '' }}">
+        <span class="icon">👥</span> 客户与商机
+      </a>
+      <a href="/quotation" class="{{ 'active' if active_page == 'quotation' else '' }}">
+        <span class="icon">💰</span> 报价管理
+      </a>
+      <a href="/tracking" class="{{ 'active' if active_page == 'tracking' else '' }}">
+        <span class="icon">📍</span> 轨迹与客服
+      </a>
+      <a href="/risk" class="{{ 'active' if active_page == 'risk' else '' }}">
+        <span class="icon">🛡️</span> 风控授信
+      </a>
+      <a href="/analytics" class="{{ 'active' if active_page == 'analytics' else '' }}">
+        <span class="icon">📈</span> 经营分析
+      </a>
+      <a href="/ai-assistant" class="{{ 'active' if active_page == 'ai_assistant' else '' }}">
+        <span class="icon">🤖</span> AI智能助手
+        <span class="sidebar-badge">AI</span>
+      </a>
+    </nav>
+    <div style="position:absolute;bottom:20px;left:20px;right:20px;font-size:11px;color:rgba(255,255,255,.4);">
+      结合纷享销客 ShareAI · 天图架构
+    </div>
+  </aside>
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ── Modal utils ──
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Toast ──
+function showToast(msg, type='success') {
+  let el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;right:20px;z-index:999;padding:12px 20px;
+    border-radius:8px;color:#fff;font-size:14px;animation:fadeIn .3s;
+    background:${type==='error'?'#ef4444':'#10b981'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(() => el.remove(), 300); }, 2500);
+}
+
+// ── API helpers ──
+async function apiGet(url) {
+  let r = await fetch(url);
+  return r.json();
+}
+async function apiPost(url) {
+  let r = await fetch(url, {method:'POST'});
+  return r.json();
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

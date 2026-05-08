@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">🤖 ShareAI 智能助手</h1>
+  <span class="text-muted">AI原生CRM · 多智能体协同</span>
+</div>
+
+<div class="grid-2">
+  <!-- 左侧: AI对话 -->
+  <div class="panel">
+    <div class="panel-header">💬 AI 对话</div>
+    <div class="ai-chat" id="aiChat">
+      <div class="ai-msg bot">
+        <div class="avatar">AI</div>
+        <div class="content">
+          👋 你好！我是 <strong>ShareAI</strong>，你的跨境物流智能助手。<br>
+          我可以帮你：<br>
+          • 📋 <strong>智能录单</strong> — 语音转结构化销售记录<br>
+          • 💰 <strong>智能报价</strong> — 多路线即时运费估算<br>
+          • 🔍 <strong>客户洞察</strong> — 经营健康度深度分析<br>
+          • 📞 <strong>会议总结</strong> — 客户拜访自动纪要<br>
+          • ⚠ <strong>流失预警</strong> — 风险客户主动识别<br>
+          <br>
+          输入指令或点击下方快捷功能开始吧！
+        </div>
+      </div>
+    </div>
+    <div class="ai-input-area" style="padding:12px 16px;">
+      <input type="text" id="aiInput" placeholder="输入指令，例如：分析思科达客户..." onkeypress="if(event.key==='Enter')sendMessage()">
+      <button onclick="sendMessage()">发送</button>
+    </div>
+  </div>
+
+  <!-- 右侧: 快捷功能 -->
+  <div>
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-header">⚡ AI 快捷功能</div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-outline" onclick="quickAction('insight','思科达')" style="justify-content:flex-start;">
+          🔍 客户洞察 — 思科达电子
+        </button>
+        <button class="btn btn-outline" onclick="quickAction('quote','')" style="justify-content:flex-start;">
+          💰 智能报价 — 即时运费估算
+        </button>
+        <button class="btn btn-outline" onclick="quickAction('voicelog','')" style="justify-content:flex-start;">
+          🎙️ 语音录单 — 模拟语音转记录
+        </button>
+        <button class="btn btn-outline" onclick="quickAction('meeting','客户拜访')" style="justify-content:flex-start;">
+          📋 会议总结 — 客户拜访复盘
+        </button>
+        <button class="btn btn-outline" onclick="quickAction('churn','')" style="justify-content:flex-start;">
+          ⚠ 流失预警 — 全局风险扫描
+        </button>
+      </div>
+    </div>
+
+    <!-- 实时洞察卡片 -->
+    <div class="panel" id="insightPanel" style="display:none;">
+      <div class="panel-header">📊 AI 分析结果</div>
+      <div class="panel-body" id="insightContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 底部: ShareAI能力矩阵 -->
+<div class="panel mt-4">
+  <div class="panel-header">🏗️ ShareAI 多智能形态 — 跨境物流CRM能力矩阵</div>
+  <div class="panel-body">
+    <div class="grid-3">
+      <div style="text-align:center;padding:16px;background:#f0f7ff;border-radius:8px;">
+        <div style="font-size:32px;margin-bottom:8px;">🤖</div>
+        <h4>AI个人助理</h4>
+        <p class="text-sm mt-2">语音问询·智能录单·一键生成周日报</p>
+        <p class="text-sm">ChatBot对话式CRM操作</p>
+      </div>
+      <div style="text-align:center;padding:16px;background:#f0fdf4;border-radius:8px;">
+        <div style="font-size:32px;margin-bottom:8px;">⚙️</div>
+        <h4>AI企业员工</h4>
+        <p class="text-sm mt-2">自动报价·合同风控·订单审核</p>
+        <p class="text-sm">AI工作流替代机械式操作</p>
+      </div>
+      <div style="text-align:center;padding:16px;background:#fef3c7;border-radius:8px;">
+        <div style="font-size:32px;margin-bottom:8px;">🧠</div>
+        <h4>AI业务专家</h4>
+        <p class="text-sm mt-2">客户洞察·流失预警·航线分析</p>
+        <p class="text-sm">AI洞察报告辅助科学决策</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── AI Chat ──
+function addMessage(type, text) {
+  let chat = document.getElementById('aiChat');
+  let div = document.createElement('div');
+  div.className = `ai-msg ${type}`;
+  div.innerHTML = `<div class="avatar">${type==='bot'?'AI':'我'}</div><div class="content">${text}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function sendMessage() {
+  let inp = document.getElementById('aiInput');
+  let msg = inp.value.trim();
+  if (!msg) return;
+  addMessage('user', msg);
+  inp.value = '';
+  // 智能识别
+  let lower = msg.toLowerCase();
+  if (lower.includes('报价') || lower.includes('运费')) {
+    await quickAction('quote', '');
+  } else if (lower.includes('洞察') || lower.includes('分析') || lower.includes('思科达')) {
+    await quickAction('insight', '1');
+  } else if (lower.includes('流失') || lower.includes('预警')) {
+    await quickAction('churn', '');
+  } else if (lower.includes('会议') || lower.includes('总结') || lower.includes('复盘')) {
+    await quickAction('meeting', msg);
+  } else if (lower.includes('录单') || lower.includes('记录')) {
+    await quickAction('voicelog', msg);
+  } else {
+    addMessage('bot', `收到你的消息：「${msg}」<br><br>我目前可以处理的指令包括：<br>• "帮我报价" — 进入智能报价<br>• "分析客户X" — 客户洞察<br>• "流失预警" — 风险扫描<br>• "会议总结" — 生成会议纪要<br>• "语音录单" — 模拟智能录入<br><br>请选择一个功能试试！`);
+  }
+}
+
+async function quickAction(action, param) {
+  let chat = document.getElementById('aiChat');
+  let panel = document.getElementById('insightPanel');
+  let content = document.getElementById('insightContent');
+
+  switch(action) {
+    case 'insight':
+      addMessage('user', `AI客户洞察：客户ID=${param}`);
+      let r = await apiGet(`/api/ai/customer_insight?customer_id=${param}`);
+      if (!r.ok) { addMessage('bot', '❌ 客户不存在，请检查ID'); return; }
+      panel.style.display = 'block';
+      let col = r.risk_color;
+      content.innerHTML = `
+        <div class="insight-card ${r.risk_level==='高'?'danger':'success'}">
+          <div class="title">${r.customer_name} — 综合诊断</div>
+          ${r.insights.map(i => `<p style="font-size:13px;margin:4px 0;">• ${i}</p>`).join('')}
+        </div>
+        <div class="mt-2"><strong>评分维度</strong></div>
+        ${Object.entries(r.score_breakdown).map(([k,v]) =>
+          `<div style="font-size:12px;margin:2px 0;">${k}: <div class="progress-bar" style="width:150px;display:inline-block;"><div class="progress-fill ${v>=70?'progress-green':v>=40?'progress-yellow':'progress-red'}" style="width:${v}%;"></div></div> ${v}分</div>`
+        ).join('')}
+        <div class="mt-2"><strong>行动建议:</strong> ${r.risk_action}</div>`;
+      addMessage('bot', `✅ 已生成 <strong>${r.customer_name}</strong> 的AI客户洞察报告（见右侧面板）<br>风险等级: <span style="color:${col}">${r.risk_level}</span> · 健康分: ${r.health_score}`);
+      break;
+
+    case 'quote':
+      addMessage('user', '帮我智能报价');
+      let p = { route_type:'海派', weight:1000, volume:5, cargo_type:'普货', incoterms:'FOB' };
+      let qr = await apiGet('/api/ai/smart_quote?' + new URLSearchParams(p));
+      panel.style.display = 'block';
+      let b = qr.breakdown;
+      content.innerHTML = `
+        <div style="text-align:center;padding:16px;">
+          <div class="text-sm">预估运费</div>
+          <div style="font-size:32px;font-weight:700;color:var(--primary-light);">¥${qr.estimated_price.toLocaleString()}</div>
+          <div class="text-sm">计费重: ${qr.chargeable_weight}kg · ${qr.route_type}</div>
+        </div>
+        <table><tbody>
+          <tr><td>基础运费</td><td>¥${b.base_freight.toLocaleString()}</td></tr>
+          <tr><td>燃油附加</td><td>¥${b.fuel_surcharge.toLocaleString()}</td></tr>
+          ${b.customs_fee>0?`<tr><td>报关费</td><td>¥${b.customs_fee.toLocaleString()}</td></tr>`:''}
+          <tr><td><strong>总价</strong></td><td><strong>¥${b.estimated_total.toLocaleString()}</strong></td></tr>
+        </tbody></table>
+        <p class="text-sm mt-2">💰 比行业均价低约${qr.market_comparison['节约比例']} · 有效期: ${qr.valid_until}</p>`;
+      addMessage('bot', `✅ 智能报价完成！${qr.calculation}<br>预估运费 <strong>¥${qr.estimated_price.toLocaleString()}</strong>（详见右侧）`);
+      break;
+
+    case 'voicelog':
+      addMessage('user', `🎙️ 语音录入：${param || '客户来电确认发货'}`);
+      let vr = await apiGet(`/api/ai/voice_log?customer_name=思科达&content=${encodeURIComponent(param || '确认电池品类发货计划')}`);
+      panel.style.display = 'block';
+      content.innerHTML = `
+        <div class="insight-card success"><div class="title">📝 结构化销售记录</div><p>${vr.structured_log}</p></div>
+        <table><tbody>
+          <tr><td>质检完整度</td><td><strong>${vr.quality_check.完整度}</strong></td></tr>
+          <tr><td>风险词汇</td><td>${vr.quality_check.风险词汇}</td></tr>
+          <tr><td>评分</td><td><span class="badge badge-green">${vr.quality_check.评分}</span></td></tr>
+          <tr><td>自动标签</td><td>${vr.auto_tags.map(t=>`<span class="badge badge-blue">${t}</span>`).join(' ')}</td></tr>
+        </tbody></table>`;
+      addMessage('bot', `✅ 语音录入完成！<br>📝 ${vr.structured_log}<br>📊 完整度: ${vr.quality_check.完整度} · 评分: ${vr.quality_check.评分}`);
+      break;
+
+    case 'meeting':
+      addMessage('user', `📋 生成会议总结：${param}`);
+      let mr = await apiGet(`/api/ai/meeting_summary?meeting_type=${encodeURIComponent(param)}`);
+      panel.style.display = 'block';
+      content.innerHTML = `
+        <div style="font-weight:600;color:var(--primary-light);">📋 ${mr.meeting_type} — AI会议总结</div>
+        <div class="mt-2"><strong>关键议题:</strong></div>
+        <ul style="font-size:13px;">${mr.post_meeting.key_topics.map(t=>`<li>${t}</li>`).join('')}</ul>
+        <div class="mt-2"><strong>行动项:</strong></div>
+        <ul style="font-size:13px;">${mr.post_meeting.action_items.map(a=>`<li>✅ ${a}</li>`).join('')}</ul>
+        ${mr.post_meeting.customer_requests ? `<div class="mt-2"><strong>客户诉求:</strong></div><ul style="font-size:13px;">${mr.post_meeting.customer_requests.map(c=>`<li>${c}</li>`).join('')}</ul>` : ''}
+        ${mr.post_meeting.decisions ? `<div class="mt-2"><strong>会议决议:</strong></div><ul style="font-size:13px;">${mr.post_meeting.decisions.map(d=>`<li>✅ ${d}</li>`).join('')}</ul>` : ''}
+        ${mr.post_meeting.risk_flag ? `<div class="insight-card danger mt-2"><strong>⚠ ${mr.post_meeting.risk_flag}</strong></div>` : ''}
+        <p class="text-sm mt-2" style="color:var(--success);">💡 ${mr.auto_fill_crm}</p>`;
+      addMessage('bot', `✅ 会议总结已生成！<br>📋 议题: ${mr.post_meeting.key_topics.join('、')}<br>💡 ${mr.auto_fill_crm}`);
+      break;
+
+    case 'churn':
+      addMessage('user', '扫描全局流失预警');
+      let cr = await apiGet('/api/ai/churn_prediction');
+      panel.style.display = 'block';
+      content.innerHTML = `
+        <div class="insight-card ${cr.high_risk_count>0?'danger':'success'}">
+          <div class="title">⚠ 流失预警扫描</div>
+          <p>发现 <strong>${cr.high_risk_count}</strong> 家高风险客户</p>
+        </div>
+        <div style="max-height:250px;overflow-y:auto;">`;
+      cr.items.forEach(i => {
+        content.innerHTML += `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <strong>${i.company_name}</strong> · 风险分: <span style="color:${i.risk_score>=70?'var(--danger)':'var(--warning)'}">${i.risk_score}</span>
+          <br><span class="text-sm">${i.factors.join(' · ')}</span>
+          <br><span style="color:var(--primary-light)">👉 ${i.action} (联系人: ${i.contact_name} ${i.phone})</span>
+        </div>`;
+      });
+      if (cr.items.length === 0) content.innerHTML += '<p class="text-muted">✅ 当前没有高风险客户</p>';
+      content.innerHTML += `</div>`;
+      addMessage('bot', `✅ 流失预警扫描完成！<br>发现 <strong>${cr.high_risk_count}</strong> 家高风险客户（风险分≥70）<br>共 ${cr.items.length} 家需关注，详见右侧面板`);
+      break;
+  }
+}
+</script>
+{% endblock %}

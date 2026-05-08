@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="margin-bottom:20px;font-size:22px;">📊 经营仪表盘</h1>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">客户总数</div>
+    <div class="value">{{ stats.lead_count + stats.customer_count }}</div>
+    <div class="sub">线索 {{ stats.lead_count }} · 合作客户 {{ stats.customer_count }}</div>
+  </div>
+  <div class="stat-card success">
+    <div class="label">在途运单</div>
+    <div class="value">{{ stats.order_active }}</div>
+    <div class="sub">正常流转中</div>
+  </div>
+  <div class="stat-card accent">
+    <div class="label">累计营收</div>
+    <div class="value">{{ stats.total_revenue }}</div>
+    <div class="sub">已确认报价单总额</div>
+  </div>
+  <div class="stat-card warning">
+    <div class="label">待处理报价</div>
+    <div class="value">{{ stats.pending_quotes }}</div>
+    <div class="sub">需尽快跟进</div>
+  </div>
+  <div class="stat-card danger">
+    <div class="label">异常运单</div>
+    <div class="value">{{ stats.exception_orders }}</div>
+    <div class="sub">需立即处理</div>
+  </div>
+  <div class="stat-card warning">
+    <div class="label">超期应收</div>
+    <div class="value">{{ stats.overdue_receivables }}</div>
+    <div class="sub">账龄超30天</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-header">📈 月度营收与运单趋势</div>
+    <div class="panel-body">
+      <canvas id="trendChart" height="220"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">📋 最近跟进动态</div>
+    <div class="panel-body" style="max-height:280px;overflow-y:auto;">
+      {% for a in recent_activities %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            {% if a.lead_id %}🎯 线索{% else %}👥 客户{% endif %}
+            <span class="badge badge-gray">{{ a.activity_type }}</span>
+          </strong>
+          <span class="text-sm">{{ a.created_at.strftime('%m-%d %H:%M') if a.created_at else '' }}</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">{{ a.content[:80] }}{% if a.content|length > 80 %}...{% endif %}</div>
+        <div class="text-sm">操作人: {{ a.created_by }}</div>
+      </div>
+      {% else %}
+      <div class="text-muted">暂无跟进记录</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ month_labels | tojson }},
+    datasets: [
+      { label: '营收(万元)', data: {{ month_revenue | tojson }}, backgroundColor: '#2563eb',
+        yAxisID:'y', order:1, borderRadius:4 },
+      { label: '运单数', data: {{ month_orders | tojson }}, borderColor: '#10b981',
+        backgroundColor:'rgba(16,185,129,.1)', type:'line', yAxisID:'y1', tension:.4, fill:true, order:0 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position:'bottom' } },
+    scales: { y: { title:{display:true,text:'万元'}, beginAtZero:true },
+              y1: { position:'right', title:{display:true,text:'票'}, beginAtZero:true, grid:{display:false} } }
+  }
+});
+</script>
+{% endblock %}
