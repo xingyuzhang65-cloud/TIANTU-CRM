@@ -82,26 +82,103 @@ TRANSITION_REQUIREMENTS = {
 }
 
 
+# ── PRD: 线索状态常量 (公海池) ──
+LEAD_STATUS_PUBLIC = 0   # 公海待认领
+LEAD_STATUS_PRIVATE = 1  # 私海跟进中
+LEAD_STATUS_CONVERTED = 2  # 已转化
+
+LEAD_STATUS_LABELS = {
+    LEAD_STATUS_PUBLIC: "公海待认领",
+    LEAD_STATUS_PRIVATE: "私海跟进中",
+    LEAD_STATUS_CONVERTED: "已转化",
+}
+
+LOGISTICS_TYPES = ["FBA", "一件代发", "小包", "空派", "海派"]
+TARGET_MARKETS = ["美国", "欧洲", "中东", "东南亚", "日韩", "澳洲", "南美", "非洲"]
+FOLLOW_STATUSES = ["未联系", "初步沟通", "意向强烈", "暂无意向", "无效信息"]
+
+
 # ── 1. 线索与公海池 ──
 class Lead(Base):
     __tablename__ = "leads"
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_name = Column(String(200), nullable=False)
     contact_name = Column(String(100))
+    contact_mobile = Column(String(30), nullable=False, index=True, comment="11位手机号(PRD必填)")
     phone = Column(String(30))
     email = Column(String(200))
     source = Column(String(50), comment="独立站/社媒/展会/海关数据/转介绍")
     country = Column(String(100))
+    target_market = Column(String(100), comment="目标市场: 美国/欧洲/中东等")
     product_interest = Column(String(200), comment="意向产品: 空派/海派/铁运/FBA头程")
+    logistics_type = Column(String(50), comment="物流偏好(PRD): FBA/一件代发/小包/空派/海派")
     status = Column(String(20), default=STATUS_NEW,
                    comment="new/contacted/disqualified — 潜客线索阶段三状态")
+    lead_status = Column(Integer, default=LEAD_STATUS_PUBLIC, index=True,
+                         comment="0:公海待认领 1:私海跟进中 2:已转化(PRD)")
     owner = Column(String(100))
+    owner_id = Column(Integer, comment="归属销售ID")
     assigned_at = Column(DateTime)
     last_followed = Column(DateTime)
+    next_follow_at = Column(DateTime, comment="下次跟进提醒时间")
     follow_count = Column(Integer, default=0)
-    auto_reclaim = Column(Boolean, default=False, comment="超7天未跟进自动回池")
+    auto_reclaim = Column(Boolean, default=False, comment="超N天未跟进/超M天未转化自动回池")
+    reclaim_deadline = Column(DateTime, comment="自动回收倒计时截止时间")
+    converted_at = Column(DateTime, comment="转化时间")
+    converted_to_type = Column(String(20), comment="转化目标类型: opportunity/customer")
+    converted_to_id = Column(Integer, comment="转化目标ID")
     created_at = Column(DateTime, default=_now)
     activities = relationship("ActivityLog", back_populates="lead", cascade="all, delete-orphan")
+    follow_ups = relationship("FollowUp", back_populates="lead", cascade="all, delete-orphan")
+
+
+# ── 1.1 线索跟进记录 (PRD: 3.3) ──
+class FollowUp(Base):
+    __tablename__ = "follow_ups"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    status = Column(String(20), comment="未联系/初步沟通/意向强烈/暂无意向/无效信息")
+    content = Column(Text, comment="跟进文本描述")
+    image_urls = Column(Text, comment="图片附件JSON数组")
+    next_follow_at = Column(DateTime, comment="下次跟进时间")
+    created_by = Column(String(100))
+    created_at = Column(DateTime, default=_now)
+    lead = relationship("Lead", back_populates="follow_ups")
+
+
+# ── 1.2 线索认领记录 (PRD: 每人每日认领上限) ──
+class ClaimRecord(Base):
+    __tablename__ = "claim_records"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    user_id = Column(Integer, nullable=False)
+    user_name = Column(String(100))
+    claimed_at = Column(DateTime, default=_now)
+
+
+# ── 1.3 系统配置参数 (PRD: N/M/X/Y 管理员可配置) ──
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(50), unique=True, nullable=False)
+    value = Column(String(200), nullable=False)
+    description = Column(String(200))
+    updated_at = Column(DateTime, default=_now, onupdate=_now)
+
+    @staticmethod
+    def get(db, key: str, default: int = 7) -> int:
+        """读取配置值"""
+        cfg = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+        return int(cfg.value) if cfg else default
+
+    @staticmethod
+    def get_all_defaults():
+        return {
+            "reclaim_no_follow_days": ("7", "N: 未跟进回收天数"),
+            "reclaim_no_convert_days": ("30", "M: 未转化回收天数"),
+            "claim_daily_limit": ("5", "X: 每人每日认领上限"),
+            "claim_private_limit": ("50", "Y: 私海持有线索总数上限"),
+        }
 
 
 # ── 2. 客户画像 ──
@@ -129,6 +206,15 @@ class Customer(Base):
                              comment="10阶段生命周期状态")
     status_changed_at = Column(DateTime, comment="最近一次状态变更时间")
     status_changed_by = Column(String(100), comment="最近一次状态变更人")
+    # ── PRD 指标字段 ──
+    volume_mom = Column(Float, comment="货量环比 MoM (%)")
+    volume_yoy = Column(Float, comment="货量同比 YoY (%)")
+    monthly_order_count = Column(Integer, default=0, comment="近30天运单数")
+    prev_month_volume = Column(Float, comment="上月货量")
+    prev_year_volume = Column(Float, comment="去年同期货量")
+    order_frequency_tag = Column(String(20), comment="下单频率: Daily/Weekly/Monthly/Inactive")
+    health_breakdown = Column(Text, comment="健康分明细 JSON: {stability, follow_activity, order_activity}")
+    last_metrics_calc_at = Column(DateTime, comment="最近指标计算时间")
     created_at = Column(DateTime, default=_now)
     opportunities = relationship("Opportunity", back_populates="customer", cascade="all, delete-orphan")
     quotations = relationship("Quotation", back_populates="customer", cascade="all, delete-orphan")

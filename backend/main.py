@@ -4,22 +4,27 @@ sys.stdout.reconfigure(encoding='utf-8')
 import datetime
 import json
 import random
+import asyncio
 from collections import defaultdict
 
-from fastapi import FastAPI, Request, Depends, Query
+from fastapi import FastAPI, Request, Depends, Query, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, or_
 
-from database import engine, Base, get_db
+from database import engine, Base, get_db, SessionLocal
 from models import (
     Lead, Customer, Opportunity, Quotation, Order,
     TrackingEvent, CreditInfo, ActivityLog, Complaint,
+    FollowUp, ClaimRecord, SystemConfig,
     ALL_STATUSES, STATUS_LABELS, TRANSITION_REQUIREMENTS,
     STATUS_NEW,
+    LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
+    LEAD_STATUS_LABELS, LOGISTICS_TYPES, TARGET_MARKETS, FOLLOW_STATUSES,
 )
+from metrics_engine import calc_metrics
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -35,7 +40,91 @@ def render(name: str, request: Request, **kwargs):
     template = jinja_env.get_template(name)
     return HTMLResponse(template.render(request=request, **kwargs))
 
-# ── 启动时建表 ──
+
+# ═══════════════════════════════════════════════
+# 公海池自动回收后台任务 (PRD 3.2)
+# ═══════════════════════════════════════════════
+
+async def auto_reclaim_scheduler():
+    """
+    后台定时任务：每60秒扫描一次
+    1. N天未跟进 → 自动回收至公海
+    2. M天未转化 → 自动回收至公海
+    """
+    while True:
+        await asyncio.sleep(60)
+        try:
+            db = SessionLocal()
+            now = datetime.datetime.now()
+            reclaim_count = 0
+
+            # 规则1: 未跟进回收 (N天)
+            n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+            no_follow_threshold = now - datetime.timedelta(days=n_days)
+            unfollowed = db.query(Lead).filter(
+                Lead.lead_status == LEAD_STATUS_PRIVATE,
+                Lead.last_followed != None,
+                Lead.last_followed < no_follow_threshold,
+            ).all()
+            for l in unfollowed:
+                l.lead_status = LEAD_STATUS_PUBLIC
+                l.owner = None
+                l.owner_id = None
+                l.reclaim_deadline = None
+                l.auto_reclaim = True
+                reclaim_count += 1
+
+            # 规则2: 未转化回收 (M天)
+            m_days = SystemConfig.get(db, "reclaim_no_convert_days", 30)
+            no_convert_threshold = now - datetime.timedelta(days=m_days)
+            unconverted = db.query(Lead).filter(
+                Lead.lead_status == LEAD_STATUS_PRIVATE,
+                Lead.assigned_at != None,
+                Lead.assigned_at < no_convert_threshold,
+            ).all()
+            for l in unconverted:
+                if l.lead_status != LEAD_STATUS_PUBLIC:  # 避免重复回收
+                    l.lead_status = LEAD_STATUS_PUBLIC
+                    l.owner = None
+                    l.owner_id = None
+                    l.reclaim_deadline = None
+                    l.auto_reclaim = True
+                    reclaim_count += 1
+
+            if reclaim_count > 0:
+                db.commit()
+                print(f"🔄 自动回收: {reclaim_count}条线索回笼至公海")
+            db.close()
+        except Exception as e:
+            print(f"⚠️ 自动回收任务异常: {e}")
+
+
+@app.on_event("startup")
+async def startup():
+    Base.metadata.create_all(bind=engine)
+    asyncio.create_task(auto_reclaim_scheduler())
+    asyncio.create_task(daily_metrics_scheduler())
+    print("⚙️  公海池自动回收调度器已启动 (每60秒检测)")
+    print("📊 客户指标每日计算调度器已启动")
+
+
+async def daily_metrics_scheduler():
+    """每日凌晨执行客户指标全量计算 (同时每5分钟检查一次是否到了新的一天)"""
+    last_run_date = None
+    while True:
+        await asyncio.sleep(300)  # 每5分钟检查一次
+        today = datetime.date.today()
+        if last_run_date == today:
+            continue
+        try:
+            count = calc_metrics()
+            last_run_date = today
+            print(f"📊 客户指标计算完成: {count}家客户已更新 (MoM/YoY/健康分/频率标签)")
+        except Exception as e:
+            print(f"⚠️ 指标计算异常: {e}")
+
+
+# ── 启动时建表──
 Base.metadata.create_all(bind=engine)
 
 
@@ -100,25 +189,91 @@ def page_dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/leads", response_class=HTMLResponse)
 def page_leads(request: Request, db: Session = Depends(get_db)):
-    """线索公海池"""
+    """线索公海池 (PRD v1.0)"""
     leads = db.query(Lead).order_by(desc(Lead.created_at)).all()
+    now = _now()
+
+    # 计算每条线索的回收倒计时(小时)
+    lead_data = []
+    for l in leads:
+        countdown = None
+        if l.lead_status == LEAD_STATUS_PRIVATE and l.reclaim_deadline:
+            delta = l.reclaim_deadline - now
+            countdown = max(0, int(delta.total_seconds() / 3600))
+        lead_data.append({
+            "obj": l,
+            "countdown": countdown,
+            "is_urgent": countdown is not None and countdown < 24,
+        })
+
     stats = {
         "total": len(leads),
-        "new": len([l for l in leads if l.status == 'new']),
-        "contacted": len([l for l in leads if l.status == 'contacted']),
-        "trial": len([l for l in leads if l.status == 'trial']),
-        "won": len([l for l in leads if l.status == 'won']),
-        "unclaimed": len([l for l in leads if l.owner is None]),
+        "public_count": len([l for l in leads if l.lead_status == LEAD_STATUS_PUBLIC]),
+        "private_count": len([l for l in leads if l.lead_status == LEAD_STATUS_PRIVATE]),
+        "converted_count": len([l for l in leads if l.lead_status == LEAD_STATUS_CONVERTED]),
     }
-    return render("leads.html", request, active_page="leads", leads=leads, stats=stats)
+
+    # 系统配置
+    config = {}
+    for key in ["reclaim_no_follow_days", "reclaim_no_convert_days", "claim_daily_limit", "claim_private_limit"]:
+        config[key] = SystemConfig.get(db, key, 7)
+
+    return render("leads.html", request, active_page="leads",
+                  leads=lead_data, stats=stats, config=config,
+                  logistics_types=LOGISTICS_TYPES, target_markets=TARGET_MARKETS,
+                  follow_statuses=FOLLOW_STATUSES,
+                  lead_status_labels=LEAD_STATUS_LABELS)
 
 
 @app.get("/customers", response_class=HTMLResponse)
 def page_customers(request: Request, db: Session = Depends(get_db)):
-    """客户画像与商机"""
+    """客户画像与商机 (PRD v1.0 卡片式布局)"""
     customers = db.query(Customer).order_by(desc(Customer.avg_monthly_revenue)).all()
-    return render("customers.html", request, active_page="customers", customers=customers,
-                  all_statuses=ALL_STATUSES, status_labels=STATUS_LABELS,
+    now = _now()
+
+    # 为每个客户构建完整的指标数据
+    customer_data = []
+    for c in customers:
+        # 解析健康分明细
+        hb = {}
+        if c.health_breakdown:
+            try:
+                hb = json.loads(c.health_breakdown)
+            except:
+                pass
+
+        # 健康色
+        if c.health_score >= 80:
+            health_color = "green"
+            health_label = "健康"
+        elif c.health_score >= 60:
+            health_color = "orange"
+            health_label = "关注"
+        else:
+            health_color = "red"
+            health_label = "高危"
+
+        # MoM趋势箭头
+        mom = c.volume_mom or 0
+        if mom > 5:
+            mom_trend = "up"
+        elif mom < -5:
+            mom_trend = "down"
+        else:
+            mom_trend = "flat"
+
+        customer_data.append({
+            "obj": c,
+            "health_color": health_color,
+            "health_label": health_label,
+            "mom_trend": mom_trend,
+            "mom_value": abs(mom),
+            "health_breakdown": hb,
+        })
+
+    return render("customers.html", request, active_page="customers",
+                  customers=customer_data, all_statuses=ALL_STATUSES,
+                  status_labels=STATUS_LABELS,
                   requirements=TRANSITION_REQUIREMENTS)
 
 
@@ -171,7 +326,7 @@ def page_ai(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/customer/{cid}", response_class=HTMLResponse)
 def page_customer_detail(cid: int, request: Request, db: Session = Depends(get_db)):
-    """客户详情页 — 状态流转管理"""
+    """客户详情页 — 状态流转管理 + PRD指标"""
     cust = db.query(Customer).filter(Customer.id == cid).first()
     if not cust:
         return HTMLResponse("客户不存在", 404)
@@ -181,9 +336,32 @@ def page_customer_detail(cid: int, request: Request, db: Session = Depends(get_d
     credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
     opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
     current = cust.lifecycle_status
+
+    # 线索溯源
+    lead_info = None
+    if cust.lead_id:
+        lead = db.query(Lead).filter(Lead.id == cust.lead_id).first()
+        if lead:
+            lead_info = lead
+
+    # 健康分明细
+    hb = {}
+    if cust.health_breakdown:
+        try: hb = json.loads(cust.health_breakdown)
+        except: pass
+
+    # 健康色
+    if cust.health_score >= 80:
+        health_color = "green"
+    elif cust.health_score >= 60:
+        health_color = "orange"
+    else:
+        health_color = "red"
+
     return render("customer_detail.html", request, active_page="customers",
                   customer=cust, quotes=quotes, orders=orders, activities=activities,
                   credit=credit, opportunities=opps,
+                  lead_info=lead_info, health_breakdown=hb, health_color=health_color,
                   current_status_label=STATUS_LABELS.get(current, current),
                   all_statuses=ALL_STATUSES, status_labels=STATUS_LABELS,
                   requirements=TRANSITION_REQUIREMENTS)
@@ -302,24 +480,564 @@ def transfer_lead(lead_id: int = Query(...), to_owner: str = Query(...), db: Ses
 
 @app.post("/api/leads/reclaim")
 def reclaim_leads(db: Session = Depends(get_db)):
-    """自动回池: 超过7天未跟进"""
-    threshold = _now() - datetime.timedelta(days=7)
-    leads = db.query(Lead).filter(
-        Lead.last_followed < threshold,
-        Lead.status.notin_(['won', 'lost'])
+    """手动触发自动回收 (管理员): 使用可配置的N/M参数"""
+    now = _now()
+    n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+    m_days = SystemConfig.get(db, "reclaim_no_convert_days", 30)
+
+    no_follow_threshold = now - datetime.timedelta(days=n_days)
+    no_convert_threshold = now - datetime.timedelta(days=m_days)
+
+    reclaimed = db.query(Lead).filter(
+        Lead.lead_status == LEAD_STATUS_PRIVATE,
+        or_(
+            Lead.last_followed < no_follow_threshold,
+            Lead.assigned_at < no_convert_threshold,
+        )
     ).all()
-    for l in leads:
+
+    count = 0
+    for l in reclaimed:
+        l.lead_status = LEAD_STATUS_PUBLIC
         l.owner = None
+        l.owner_id = None
+        l.reclaim_deadline = None
         l.auto_reclaim = True
+        count += 1
     db.commit()
-    return {"ok": True, "reclaimed": len(leads)}
+    return {"ok": True, "reclaimed": count, "params": {"N_days": n_days, "M_days": m_days}}
 
 
 # ═══════════════════════════════════════════════
-# API 路由 - 客户管理
+# API 路由 - 线索管理 (PRD v1.0 完整实现)
 # ═══════════════════════════════════════════════
+
+@app.get("/api/leads/list")
+def api_lead_list(
+    target_market: str = Query(None),
+    logistics_type: str = Query(None),
+    follow_status: str = Query(None),
+    pool: str = Query(None, comment="private/public/all"),
+    keyword: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """线索列表 (PRD 5.1): 支持多维度筛选"""
+    q = db.query(Lead)
+    if target_market:
+        q = q.filter(Lead.target_market == target_market)
+    if logistics_type:
+        q = q.filter(Lead.logistics_type == logistics_type)
+    if pool == "public":
+        q = q.filter(Lead.lead_status == LEAD_STATUS_PUBLIC)
+    elif pool == "private":
+        q = q.filter(Lead.lead_status == LEAD_STATUS_PRIVATE)
+    if keyword:
+        kw = f"%{keyword}%"
+        q = q.filter(
+            Lead.company_name.ilike(kw) | Lead.contact_mobile.ilike(kw) | Lead.contact_name.ilike(kw)
+        )
+    leads = q.order_by(Lead.created_at.desc()).all()
+    now = _now()
+    result = []
+    for l in leads:
+        # 计算回收倒计时
+        countdown = None
+        if l.lead_status == LEAD_STATUS_PRIVATE and l.reclaim_deadline:
+            delta = l.reclaim_deadline - now
+            countdown = max(0, int(delta.total_seconds() / 3600))
+        result.append({
+            "id": l.id, "company_name": l.company_name,
+            "contact_name": l.contact_name, "contact_mobile": l.contact_mobile,
+            "logistics_type": l.logistics_type, "target_market": l.target_market,
+            "lead_status": l.lead_status,
+            "lead_status_label": LEAD_STATUS_LABELS.get(l.lead_status, ""),
+            "owner": l.owner, "owner_id": l.owner_id,
+            "follow_count": l.follow_count,
+            "last_followed": str(l.last_followed) if l.last_followed else None,
+            "next_follow_at": str(l.next_follow_at) if l.next_follow_at else None,
+            "created_at": str(l.created_at),
+            "reclaim_countdown_hours": countdown,
+            "source": l.source,
+            "country": l.country,
+        })
+    return {"ok": True, "leads": result, "total": len(result)}
+
+
+@app.get("/api/leads/{lead_id}")
+def api_lead_detail(lead_id: int, db: Session = Depends(get_db)):
+    """线索详情"""
+    l = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not l:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+    follow_ups = db.query(FollowUp).filter(
+        FollowUp.lead_id == lead_id
+    ).order_by(FollowUp.created_at.desc()).all()
+    now = _now()
+    countdown = None
+    if l.lead_status == LEAD_STATUS_PRIVATE and l.reclaim_deadline:
+        delta = l.reclaim_deadline - now
+        countdown = max(0, int(delta.total_seconds() / 3600))
+    return {
+        "ok": True,
+        "lead": {
+            "id": l.id, "company_name": l.company_name,
+            "contact_name": l.contact_name, "contact_mobile": l.contact_mobile,
+            "phone": l.phone, "email": l.email,
+            "logistics_type": l.logistics_type, "target_market": l.target_market,
+            "source": l.source, "country": l.country,
+            "product_interest": l.product_interest,
+            "lead_status": l.lead_status,
+            "lead_status_label": LEAD_STATUS_LABELS.get(l.lead_status, ""),
+            "owner": l.owner, "owner_id": l.owner_id,
+            "follow_count": l.follow_count,
+            "last_followed": str(l.last_followed) if l.last_followed else None,
+            "next_follow_at": str(l.next_follow_at) if l.next_follow_at else None,
+            "reclaim_deadline": str(l.reclaim_deadline) if l.reclaim_deadline else None,
+            "reclaim_countdown_hours": countdown,
+            "created_at": str(l.created_at),
+            "converted_at": str(l.converted_at) if l.converted_at else None,
+            "converted_to_type": l.converted_to_type,
+        },
+        "follow_ups": [{
+            "id": f.id, "status": f.status, "content": f.content,
+            "next_follow_at": str(f.next_follow_at) if f.next_follow_at else None,
+            "created_by": f.created_by,
+            "created_at": str(f.created_at),
+        } for f in follow_ups],
+    }
+
+
+@app.post("/api/leads/create")
+def api_lead_create(data: dict = Body(), db: Session = Depends(get_db)):
+    """创建线索 (PRD 3.1): 含强制查重逻辑"""
+    company_name = (data.get("company_name") or "").strip()
+    contact_mobile = (data.get("contact_mobile") or "").strip()
+    if not company_name or not contact_mobile:
+        return JSONResponse({"ok": False, "msg": "公司名称和手机号为必填项"}, 400)
+
+    # 判重：按手机号 或 公司名称
+    existing = db.query(Lead).filter(
+        (Lead.contact_mobile == contact_mobile) | (Lead.company_name == company_name)
+    ).first()
+
+    if existing:
+        if existing.lead_status == LEAD_STATUS_PRIVATE:
+            return {
+                "ok": False,
+                "duplicate": True,
+                "msg": f"该线索已由销售{existing.owner or '未知'}跟进中",
+                "existing_lead_id": existing.id,
+                "existing_owner": existing.owner,
+                "in_pool": "private",
+            }
+        elif existing.lead_status == LEAD_STATUS_PUBLIC:
+            return {
+                "ok": False,
+                "duplicate": True,
+                "msg": "该线索已在公海，可直接认领",
+                "existing_lead_id": existing.id,
+                "existing_owner": None,
+                "in_pool": "public",
+            }
+        else:
+            return {
+                "ok": False,
+                "duplicate": True,
+                "msg": "该线索已转化，不可重复创建",
+                "existing_lead_id": existing.id,
+                "in_pool": "converted",
+            }
+
+    lead = Lead(
+        company_name=company_name,
+        contact_name=data.get("contact_name", ""),
+        contact_mobile=contact_mobile,
+        phone=data.get("phone", contact_mobile),
+        email=data.get("email", ""),
+        source=data.get("source", ""),
+        country=data.get("country", ""),
+        target_market=data.get("target_market", ""),
+        logistics_type=data.get("logistics_type", ""),
+        product_interest=data.get("product_interest", ""),
+        lead_status=LEAD_STATUS_PUBLIC,
+        status=STATUS_NEW,
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+    return {"ok": True, "lead_id": lead.id, "msg": "线索创建成功，已进入公海池"}
+
+
+@app.post("/api/leads/{lead_id}/claim")
+def api_lead_claim(
+    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+):
+    """认领线索 (PRD 3.2): 含每日上限和私海总量限制"""
+    user_id = data.get("user_id", 1)
+    user_name = data.get("user_name", "张晓明")
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+    if lead.lead_status != LEAD_STATUS_PUBLIC:
+        return JSONResponse({"ok": False, "msg": "该线索不在公海，无法认领"}, 400)
+
+    # X: 每日认领上限
+    today = _date()
+    today_claims = db.query(ClaimRecord).filter(
+        ClaimRecord.user_id == user_id,
+        ClaimRecord.claimed_at >= today,
+    ).count()
+    daily_limit = SystemConfig.get(db, "claim_daily_limit", 5)
+    if today_claims >= daily_limit:
+        return JSONResponse({"ok": False, "msg": f"今日认领已达上限({daily_limit}条)，请明天再试"}, 400)
+
+    # Y: 私海持有上限
+    private_count = db.query(Lead).filter(
+        Lead.owner_id == user_id,
+        Lead.lead_status == LEAD_STATUS_PRIVATE,
+    ).count()
+    private_limit = SystemConfig.get(db, "claim_private_limit", 50)
+    if private_count >= private_limit:
+        return JSONResponse({"ok": False, "msg": f"私海线索已达上限({private_limit}条)，请先清理无效线索"}, 400)
+
+    # 执行认领
+    lead.owner = user_name
+    lead.owner_id = user_id
+    lead.lead_status = LEAD_STATUS_PRIVATE
+    lead.assigned_at = _now()
+    lead.last_followed = _now()
+
+    # 设置回收倒计时 (N天未跟进)
+    n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+    lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
+
+    db.add(ClaimRecord(lead_id=lead_id, user_id=user_id, user_name=user_name))
+    db.commit()
+    return {"ok": True, "msg": f"认领成功，请在{n_days}天内完成首次跟进"}
+
+
+@app.post("/api/leads/{lead_id}/follow-up")
+def api_lead_follow_up(
+    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+):
+    """添加跟进记录 (PRD 3.3)"""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+
+    fu = FollowUp(
+        lead_id=lead_id,
+        status=data.get("status", "初步沟通"),
+        content=data.get("content", ""),
+        image_urls=data.get("image_urls"),
+        next_follow_at=data.get("next_follow_at"),
+        created_by=data.get("created_by", lead.owner or ""),
+    )
+    db.add(fu)
+
+    # 更新线索跟进状态
+    lead.last_followed = _now()
+    lead.follow_count = (lead.follow_count or 0) + 1
+    if data.get("next_follow_at"):
+        lead.next_follow_at = data.get("next_follow_at")
+
+    # 重置回收倒计时
+    n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+    lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
+    lead.auto_reclaim = False
+
+    db.commit()
+    db.refresh(fu)
+    return {"ok": True, "follow_up_id": fu.id, "msg": "跟进记录已保存，回收倒计时已重置"}
+
+
+@app.post("/api/leads/{lead_id}/convert")
+def api_lead_convert(
+    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+):
+    """线索转化 (PRD 3.4): 转商机或转客户"""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+
+    convert_type = data.get("convert_type", "customer")
+
+    lead.lead_status = LEAD_STATUS_CONVERTED
+    lead.converted_at = _now()
+    lead.converted_to_type = convert_type
+
+    if convert_type == "customer":
+        customer = Customer(
+            lead_id=lead.id,
+            company_name=lead.company_name,
+            contact_name=lead.contact_name,
+            phone=lead.contact_mobile,
+            email=lead.email,
+            country=lead.country or lead.target_market,
+            lifecycle_status=STATUS_NURTURING,
+            status_changed_at=_now(),
+            status_changed_by=data.get("operator", lead.owner or ""),
+        )
+        db.add(customer)
+        db.flush()
+        lead.converted_to_id = customer.id
+        msg = f"已转化为客户: {customer.company_name}"
+    else:
+        # 转商机 - 需要关联一个客户
+        customer_id = data.get("customer_id")
+        if not customer_id:
+            return JSONResponse({"ok": False, "msg": "转商机需要指定关联客户ID"}, 400)
+        opp = Opportunity(
+            customer_id=customer_id,
+            name=data.get("opportunity_name", f"{lead.company_name}商机"),
+            stage="initial",
+            amount=data.get("amount", 0),
+            expected_close_date=data.get("expected_close_date"),
+            notes=data.get("notes", ""),
+        )
+        db.add(opp)
+        db.flush()
+        lead.converted_to_id = opp.id
+        msg = f"已转化为商机: {opp.name}"
+
+    db.commit()
+    return {"ok": True, "msg": msg, "converted_to_id": lead.converted_to_id}
+
+
+@app.post("/api/leads/batch-to-pool")
+def api_lead_batch_to_pool(data: dict = Body(), db: Session = Depends(get_db)):
+    """批量放入公海 (PRD 5.2)"""
+    ids = data.get("ids", [])
+    if not ids:
+        return JSONResponse({"ok": False, "msg": "请选择至少一条线索"}, 400)
+    updated = db.query(Lead).filter(Lead.id.in_(ids)).update(
+        {"lead_status": LEAD_STATUS_PUBLIC, "owner": None, "owner_id": None,
+         "reclaim_deadline": None, "auto_reclaim": False},
+        synchronize_session="fetch"
+    )
+    db.commit()
+    return {"ok": True, "msg": f"已将{updated}条线索放回公海"}
+
+
+@app.post("/api/leads/{lead_id}/reassign")
+def api_lead_reassign(
+    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+):
+    """主管手动分配线索 (PRD 3.2)"""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+
+    lead.owner = data.get("user_name", "")
+    lead.owner_id = data.get("user_id")
+    lead.lead_status = LEAD_STATUS_PRIVATE
+    lead.assigned_at = _now()
+    lead.last_followed = _now()
+    n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+    lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
+    lead.auto_reclaim = False
+
+    db.commit()
+    return {"ok": True, "msg": f"已分配给{lead.owner}，回收倒计时已重置"}
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 系统配置
+# ═══════════════════════════════════════════════
+
+@app.get("/api/config")
+def api_get_config(db: Session = Depends(get_db)):
+    """获取系统配置参数"""
+    defaults = SystemConfig.get_all_defaults()
+    result = {}
+    for key in defaults:
+        result[key] = SystemConfig.get(db, key, int(defaults[key][0]))
+    return {"ok": True, "config": result}
+
+
+@app.post("/api/config")
+def api_update_config(data: dict = Body(), db: Session = Depends(get_db)):
+    """更新系统配置参数 (管理员)"""
+    for key, value in data.items():
+        cfg = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+        if cfg:
+            cfg.value = str(value)
+            cfg.updated_at = _now()
+    db.commit()
+    return {"ok": True, "msg": "配置已更新"}
+
+
+@app.get("/api/enums")
+def api_get_enums():
+    """获取枚举值列表"""
+    return {
+        "logistics_types": LOGISTICS_TYPES,
+        "target_markets": TARGET_MARKETS,
+        "follow_statuses": FOLLOW_STATUSES,
+        "lead_statuses": [{"value": k, "label": v} for k, v in LEAD_STATUS_LABELS.items()],
+    }
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 客户管理 (PRD 客户与商机模块)
+# ═══════════════════════════════════════════════
+
+@app.get("/api/customers/list")
+def api_customer_list(
+    status: str = Query(None),
+    level: str = Query(None),
+    health: str = Query(None),
+    keyword: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """客户列表 (PRD §4): 支持状态Tab/等级/健康度筛选"""
+    q = db.query(Customer)
+    if status:
+        q = q.filter(Customer.lifecycle_status == status)
+    if level:
+        q = q.filter(Customer.customer_level == level)
+    if keyword:
+        kw = f"%{keyword}%"
+        q = q.filter(Customer.company_name.ilike(kw) | Customer.contact_name.ilike(kw))
+    customers = q.order_by(desc(Customer.avg_monthly_revenue)).all()
+
+    result = []
+    for c in customers:
+        hb = {}
+        if c.health_breakdown:
+            try: hb = json.loads(c.health_breakdown)
+            except: pass
+
+        result.append({
+            "id": c.id, "lead_id": c.lead_id,
+            "company_name": c.company_name, "contact_name": c.contact_name,
+            "phone": c.phone, "email": c.email, "country": c.country,
+            "main_category": c.main_category,
+            "shipping_frequency": c.shipping_frequency,
+            "usual_routes": c.usual_routes,
+            "customer_level": c.customer_level,
+            "health_score": c.health_score,
+            "health_breakdown": hb,
+            "lifecycle_status": c.lifecycle_status,
+            "lifecycle_label": STATUS_LABELS.get(c.lifecycle_status, c.lifecycle_status),
+            "avg_monthly_volume": c.avg_monthly_volume,
+            "avg_monthly_revenue": c.avg_monthly_revenue,
+            "volume_mom": c.volume_mom,
+            "volume_yoy": c.volume_yoy,
+            "monthly_order_count": c.monthly_order_count,
+            "order_frequency_tag": c.order_frequency_tag,
+            "cooperation_since": str(c.cooperation_since) if c.cooperation_since else None,
+            "created_at": str(c.created_at),
+        })
+    return {"ok": True, "customers": result, "total": len(result)}
+
+
+@app.get("/api/customers/{cid}/orders")
+def api_customer_orders(cid: int, db: Session = Depends(get_db)):
+    """运单钻取: 最近10笔运单 (PRD §4 数据穿透)"""
+    orders = db.query(Order).filter(
+        Order.customer_id == cid
+    ).order_by(desc(Order.created_at)).limit(10).all()
+    return {
+        "ok": True,
+        "orders": [{
+            "id": o.id, "tracking_number": o.tracking_number,
+            "route_detail": o.route_detail, "cargo_desc": o.cargo_desc,
+            "weight_kg": o.weight_kg, "volume_cbm": o.volume_cbm,
+            "status": o.status, "etd": str(o.etd) if o.etd else None,
+            "eta": str(o.eta) if o.eta else None,
+            "has_exception": o.has_exception, "exception_type": o.exception_type,
+            "created_at": str(o.created_at),
+        } for o in orders],
+    }
+
+
+@app.get("/api/customers/{cid}/metrics")
+def api_customer_metrics(cid: int, db: Session = Depends(get_db)):
+    """客户指标详情 (PRD §3 算法)"""
+    c = db.query(Customer).filter(Customer.id == cid).first()
+    if not c:
+        return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
+    hb = {}
+    if c.health_breakdown:
+        try: hb = json.loads(c.health_breakdown)
+        except: pass
+
+    return {
+        "ok": True,
+        "metrics": {
+            "health_score": c.health_score,
+            "health_breakdown": hb,
+            "volume_mom": c.volume_mom,
+            "volume_yoy": c.volume_yoy,
+            "monthly_order_count": c.monthly_order_count,
+            "prev_month_volume": c.prev_month_volume,
+            "order_frequency_tag": c.order_frequency_tag,
+            "avg_monthly_volume": c.avg_monthly_volume,
+            "avg_monthly_revenue": c.avg_monthly_revenue,
+            "last_calc_at": str(c.last_metrics_calc_at) if c.last_metrics_calc_at else None,
+        },
+    }
+
+
+@app.post("/api/customers/metrics/calculate")
+def api_trigger_metrics_calc(db: Session = Depends(get_db)):
+    """手动触发全量指标计算"""
+    count = calc_metrics()
+    return {"ok": True, "msg": f"已更新 {count} 家客户指标", "count": count}
+
 
 @app.get("/api/customers/{cid}")
+def get_customer(cid: int, db: Session = Depends(get_db)):
+    """获取客户详情含画像、商机、订单"""
+    cust = db.query(Customer).filter(Customer.id == cid).first()
+    if not cust:
+        return JSONResponse({"ok": False}, 404)
+    opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
+    orders = db.query(Order).filter(Order.customer_id == cid).order_by(desc(Order.created_at)).limit(10).all()
+    credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
+    hb = {}
+    if cust.health_breakdown:
+        try: hb = json.loads(cust.health_breakdown)
+        except: pass
+    # 线索溯源
+    lead_info = None
+    if cust.lead_id:
+        lead = db.query(Lead).filter(Lead.id == cust.lead_id).first()
+        if lead:
+            lead_info = {"id": lead.id, "company_name": lead.company_name,
+                         "contact_mobile": lead.contact_mobile, "source": lead.source}
+    return {
+        "customer": {
+            "id": cust.id, "lead_id": cust.lead_id,
+            "company_name": cust.company_name,
+            "contact_name": cust.contact_name, "country": cust.country,
+            "main_category": cust.main_category,
+            "shipping_frequency": cust.shipping_frequency,
+            "usual_routes": cust.usual_routes,
+            "avg_monthly_volume": cust.avg_monthly_volume,
+            "avg_monthly_revenue": cust.avg_monthly_revenue,
+            "customer_level": cust.customer_level,
+            "health_score": cust.health_score,
+            "health_breakdown": hb,
+            "volume_mom": cust.volume_mom,
+            "volume_yoy": cust.volume_yoy,
+            "monthly_order_count": cust.monthly_order_count,
+            "order_frequency_tag": cust.order_frequency_tag,
+            "lifecycle_status": cust.lifecycle_status,
+            "lifecycle_label": STATUS_LABELS.get(cust.lifecycle_status, cust.lifecycle_status),
+            "cooperation_since": str(cust.cooperation_since) if cust.cooperation_since else None,
+        },
+        "lead_source": lead_info,
+        "opportunities": [{"id": o.id, "name": o.name, "stage": o.stage,
+                           "amount": o.amount, "win_probability": o.win_probability} for o in opps],
+        "orders": [{"id": o.id, "tracking_number": o.tracking_number,
+                    "status": o.status, "route_detail": o.route_detail,
+                    "has_exception": o.has_exception} for o in orders],
+        "credit": {"credit_score": credit.credit_score, "credit_limit": credit.credit_limit,
+                   "balance_due": credit.balance_due, "days_aged": credit.days_aged} if credit else None,
+    }
 def get_customer(cid: int, db: Session = Depends(get_db)):
     """获取客户详情含画像、商机、订单"""
     cust = db.query(Customer).filter(Customer.id == cid).first()

@@ -1,86 +1,483 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+/* ── 线索模块专用样式 ── */
+.tab-bar { display:flex; gap:0; margin-bottom:20px; background:var(--card); border-radius:var(--radius); padding:4px; box-shadow:var(--shadow); }
+.tab-btn { flex:1; padding:10px 20px; border:none; background:transparent; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; color:var(--text-secondary); transition:all .2s; }
+.tab-btn.active { background:var(--primary-light); color:#fff; }
+.filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+.filter-bar select, .filter-bar input { padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:#fff; }
+.filter-bar input { min-width:200px; }
+.countdown-urgent { color:var(--danger); font-weight:700; animation:pulse 1s infinite; }
+.countdown-warn { color:var(--warning); font-weight:600; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+.batch-bar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; margin-bottom:12px; font-size:13px; }
+.dup-alert { padding:16px; border-radius:8px; margin:12px 0; font-size:14px; line-height:1.6; }
+.dup-alert.danger { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+.dup-alert.warning { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+.follow-item { padding:14px; border:1px solid var(--border); border-radius:8px; margin-bottom:10px; }
+.follow-item .meta { display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:var(--text-secondary); }
+.convert-actions { display:flex; gap:8px; margin-top:12px; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.detail-grid .field { }
+.detail-grid .field label { font-size:12px; color:var(--text-secondary); display:block; }
+.detail-grid .field span { font-size:14px; font-weight:500; display:block; margin-top:2px; }
+.stat-card.public { border-left:3px solid var(--text-secondary); }
+.stat-card.private { border-left:3px solid var(--primary-light); }
+.stat-card.converted { border-left:3px solid var(--success); }
+</style>
+
 <div class="flex-between mb-4">
-  <h1 style="font-size:22px;">🎯 线索公海池</h1>
+  <h1 style="font-size:22px;">🎯 线索与公海池</h1>
   <div style="display:flex;gap:8px;">
-    <button class="btn btn-outline btn-sm" onclick="autoReclaim()">🔄 自动回池</button>
+    <button class="btn btn-outline btn-sm" onclick="openCreateModal()">+ 新建线索</button>
+    <button class="btn btn-outline btn-sm" onclick="manualReclaim()">🔄 手动回收</button>
   </div>
 </div>
 
-<div class="stats-grid" style="grid-template-columns:repeat(6, 1fr);">
-  <div class="stat-card"><div class="label">全部</div><div class="value">{{ stats.total }}</div></div>
-  <div class="stat-card"><div class="label">新增</div><div class="value" style="color:var(--accent)">{{ stats.new }}</div></div>
-  <div class="stat-card"><div class="label">已联系</div><div class="value">{{ stats.contacted }}</div></div>
-  <div class="stat-card"><div class="label">试用中</div><div class="value" style="color:var(--success)">{{ stats.trial }}</div></div>
-  <div class="stat-card success"><div class="label">已转化</div><div class="value">{{ stats.won }}</div></div>
-  <div class="stat-card warning"><div class="label">待认领</div><div class="value">{{ stats.unclaimed }}</div></div>
+<!-- 统计卡片 -->
+<div class="stats-grid" style="grid-template-columns:repeat(4, minmax(180px, 1fr));">
+  <div class="stat-card"><div class="label">线索总数</div><div class="value">{{ stats.total }}</div></div>
+  <div class="stat-card public"><div class="label">🌊 公海待认领</div><div class="value" style="color:var(--text-secondary);">{{ stats.public_count }}</div></div>
+  <div class="stat-card private"><div class="label">🔒 私海跟进中</div><div class="value" style="color:var(--primary-light);">{{ stats.private_count }}</div></div>
+  <div class="stat-card converted"><div class="label">✅ 已转化</div><div class="value" style="color:var(--success);">{{ stats.converted_count }}</div></div>
 </div>
 
+<!-- Tab 切换 -->
+<div class="tab-bar" id="tabBar">
+  <button class="tab-btn active" onclick="switchTab('all', this)" data-tab="all">全部线索</button>
+  <button class="tab-btn" onclick="switchTab('private', this)" data-tab="private">🔒 私海 (跟进中)</button>
+  <button class="tab-btn" onclick="switchTab('public', this)" data-tab="public">🌊 公海 (待认领)</button>
+  <button class="tab-btn" onclick="switchTab('converted', this)" data-tab="converted">✅ 已转化</button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar" id="filterBar">
+  <span style="font-size:13px;color:var(--text-secondary);font-weight:500;">筛选:</span>
+  <select id="filterMarket" onchange="applyFilters()">
+    <option value="">全部市场</option>
+    {% for m in target_markets %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+  </select>
+  <select id="filterLogistics" onchange="applyFilters()">
+    <option value="">全部物流类型</option>
+    {% for t in logistics_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+  </select>
+  <input type="text" id="filterKeyword" placeholder="搜索公司名/手机号..." oninput="applyFilters()">
+  <button class="btn btn-outline btn-sm" onclick="clearFilters()">清除</button>
+</div>
+
+<!-- 批量操作栏 -->
+<div class="batch-bar" id="batchBar" style="display:none;">
+  <span id="batchCount" style="font-weight:600;color:var(--primary-light);">已选 0 条</span>
+  <button class="btn btn-sm btn-primary" onclick="batchToPool()">一键放入公海</button>
+  <button class="btn btn-sm btn-outline" onclick="clearSelection()">取消选择</button>
+</div>
+
+<!-- 线索列表 -->
 <div class="panel">
-  <div class="panel-body table-wrap">
+  <div class="panel-body table-wrap" style="padding:0;">
     <table>
       <thead>
-        <tr><th>公司名称</th><th>联系人</th><th>来源</th><th>国家</th><th>意向产品</th><th>状态</th><th>负责人</th><th>最近跟进</th><th>操作</th></tr>
-      </thead>
-      <tbody>
-        {% for l in leads %}
         <tr>
-          <td><strong>{{ l.company_name }}</strong></td>
+          <th style="width:36px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+          <th>公司名称</th>
+          <th>联系人</th>
+          <th>手机号</th>
+          <th>物流偏好</th>
+          <th>目标市场</th>
+          <th>池状态</th>
+          <th>归属</th>
+          <th>回收倒计时</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="leadTableBody">
+        {% for ld in leads %}
+        {% set l = ld.obj %}
+        <tr data-lead-id="{{ l.id }}" data-pool="{{ l.lead_status }}" data-market="{{ l.target_market or '' }}" data-logistics="{{ l.logistics_type or '' }}" data-search="{{ l.company_name }} {{ l.contact_mobile }} {{ l.contact_name or '' }}">
+          <td><input type="checkbox" class="lead-checkbox" value="{{ l.id }}" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal({{ l.id }})" style="font-weight:600;color:var(--primary-light);">{{ l.company_name }}</a></td>
           <td>{{ l.contact_name or '-' }}</td>
-          <td><span class="badge badge-blue">{{ l.source }}</span></td>
-          <td>{{ l.country }}</td>
-          <td>{{ l.product_interest }}</td>
+          <td style="font-family:monospace;font-size:13px;">{{ l.contact_mobile }}</td>
           <td>
-            {% if l.status == 'new' %}<span class="badge badge-blue">新线索</span>
-            {% elif l.status == 'contacted' %}<span class="badge badge-yellow">接触中</span>
-            {% elif l.status == 'quoted' %}<span class="badge badge-purple">已报价</span>
-            {% elif l.status == 'trial' %}<span class="badge badge-green">试用中</span>
-            {% elif l.status == 'won' %}<span class="badge badge-green">已转化</span>
-            {% else %}<span class="badge badge-gray">{{ l.status }}</span>
+            {% if l.logistics_type %}
+            <span class="badge badge-blue">{{ l.logistics_type }}</span>
+            {% else %}-{% endif %}
+          </td>
+          <td>{{ l.target_market or '-' }}</td>
+          <td>
+            {% if l.lead_status == 0 %}<span class="badge badge-gray">🌊 公海</span>
+            {% elif l.lead_status == 1 %}<span class="badge badge-blue">🔒 私海</span>
+            {% elif l.lead_status == 2 %}<span class="badge badge-green">✅ 已转化</span>
             {% endif %}
           </td>
-          <td>{{ l.owner or '<span class="status-warning">未分配</span>' | safe }}</td>
-          <td class="text-sm">{{ l.last_followed.strftime('%m-%d %H:%M') if l.last_followed else '从未跟进' }}</td>
+          <td>{{ l.owner or '<span style="color:var(--text-secondary);">-</span>' | safe }}</td>
           <td>
-            {% if not l.owner %}
-            <button class="btn btn-primary btn-sm" onclick="claimLead({{ l.id }})">认领</button>
+            {% if l.lead_status == 1 and ld.countdown is not none %}
+            <span class="{% if ld.is_urgent %}countdown-urgent{% else %}countdown-warn{% endif %}" style="font-family:monospace;">
+              ⏱ 剩 {{ ld.countdown }}h
+            </span>
+            {% elif l.lead_status == 2 %}
+            <span style="color:var(--success);font-size:12px;">已转化</span>
             {% else %}
-            <button class="btn btn-outline btn-sm" onclick="showTransfer({{ l.id }}, '{{ l.owner }}')">转移</button>
+            <span style="color:var(--text-secondary);">-</span>
             {% endif %}
+          </td>
+          <td>
+            {% if l.lead_status == 0 %}
+            <button class="btn btn-primary btn-sm" onclick="claimLead({{ l.id }})">认领</button>
+            {% elif l.lead_status == 1 %}
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal({{ l.id }})">跟进</button>
+            {% endif %}
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal({{ l.id }})">详情</button>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if not leads %}
+    <div style="text-align:center;padding:60px;color:var(--text-secondary);">暂无数据</div>
+    {% endif %}
   </div>
 </div>
 
+<!-- 配置参数提示 -->
+<div style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);margin-top:-12px;margin-bottom:12px;">
+  <span>⚙️ 回收规则: N={{ config.reclaim_no_follow_days }}天未跟进 / M={{ config.reclaim_no_convert_days }}天未转化 → 自动回公海</span>
+  <span>|</span>
+  <span>📊 认领限制: 每日{{ config.claim_daily_limit }}条 / 私海上限{{ config.claim_private_limit }}条</span>
+</div>
+
 <script>
-async function claimLead(id) {
-  let r = await apiPost('/api/leads/claim?lead_id=' + id + '&owner=张晓明');
-  if (r.ok) { showToast('认领成功！'); location.reload(); }
-  else showToast(r.msg, 'error');
+// ═══════════════════════════════════════════
+// Tab 切换
+// ═══════════════════════════════════════════
+var currentTab = 'all';
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  applyFilters();
 }
-async function autoReclaim() {
-  let r = await apiPost('/api/leads/reclaim');
-  showToast(`已自动回池 ${r.reclaimed} 条未跟进线索`);
-  setTimeout(() => location.reload(), 1000);
+
+// ═══════════════════════════════════════════
+// 筛选逻辑
+// ═══════════════════════════════════════════
+function applyFilters() {
+  var market = document.getElementById('filterMarket').value;
+  var logistics = document.getElementById('filterLogistics').value;
+  var keyword = document.getElementById('filterKeyword').value.toLowerCase();
+  var rows = document.querySelectorAll('#leadTableBody tr');
+  rows.forEach(function(row) {
+    var show = true;
+    // Tab filter (pool)
+    if (currentTab !== 'all') {
+      var tabMap = {private:'1', public:'0', converted:'2'};
+      if (row.dataset.pool !== tabMap[currentTab]) show = false;
+    }
+    // Market filter
+    if (market && row.dataset.market !== market) show = false;
+    // Logistics filter
+    if (logistics && row.dataset.logistics !== logistics) show = false;
+    // Keyword search
+    if (keyword && row.dataset.search.toLowerCase().indexOf(keyword) === -1) show = false;
+    row.style.display = show ? '' : 'none';
+  });
+  updateBatchBar();
 }
-function showTransfer(id, currentOwner) {
-  let html = `<h3>转移线索</h3>
-    <p class="text-muted">当前负责人: ${currentOwner}</p>
-    <label>新负责人</label>
-    <select id="newOwner"><option>张晓明</option><option>李强</option><option>王芳</option></select>
-    <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeModal()">取消</button>
-      <button class="btn btn-primary" onclick="doTransfer(${id})">确认转移</button>
-    </div>`;
+
+function clearFilters() {
+  document.getElementById('filterMarket').value = '';
+  document.getElementById('filterLogistics').value = '';
+  document.getElementById('filterKeyword').value = '';
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════
+// 批量操作
+// ═══════════════════════════════════════════
+function toggleSelectAll() {
+  var checked = document.getElementById('selectAll').checked;
+  var checkboxes = document.querySelectorAll('.lead-checkbox');
+  checkboxes.forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row.style.display !== 'none' || !checked) {
+      cb.checked = checked;
+    }
+  });
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  var checked = document.querySelectorAll('.lead-checkbox:checked');
+  var bar = document.getElementById('batchBar');
+  var count = document.getElementById('batchCount');
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = '已选 ' + checked.length + ' 条';
+  } else {
+    bar.style.display = 'none';
+    document.getElementById('selectAll').checked = false;
+  }
+}
+
+function clearSelection() {
+  document.querySelectorAll('.lead-checkbox').forEach(function(cb) { cb.checked = false; });
+  document.getElementById('selectAll').checked = false;
+  updateBatchBar();
+}
+
+async function batchToPool() {
+  if (!confirm('确定将选中的线索放入公海吗？')) return;
+  var ids = [];
+  document.querySelectorAll('.lead-checkbox:checked').forEach(function(cb) { ids.push(parseInt(cb.value)); });
+  var r = await apiPost('/api/leads/batch-to-pool');
+  if (!r.ok) return showToast(r.msg, 'error');
+  showToast(r.msg);
+  setTimeout(function() { location.reload(); }, 800);
+}
+
+// ═══════════════════════════════════════════
+// 新建线索 — 含判重逻辑 (PRD 3.1)
+// ═══════════════════════════════════════════
+function openCreateModal() {
+  var html = '<h3>📝 新建线索</h3>'
+    + '<div id="dupAlert"></div>'
+    + '<label>公司名称 <span style="color:red">*</span></label>'
+    + '<input id="crCompany" placeholder="请输入企业全称">'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>联系人</label><input id="crContact" placeholder="联系人姓名"></div>'
+    + '<div class="field"><label>手机号 <span style="color:red">*</span></label><input id="crMobile" placeholder="11位手机号"></div>'
+    + '</div>'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>物流偏好 <span style="color:red">*</span></label>'
+    + '<select id="crLogistics"><option value="">请选择</option>{% for t in logistics_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></div>'
+    + '<div class="field"><label>目标市场</label>'
+    + '<select id="crMarket"><option value="">请选择</option>{% for m in target_markets %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>'
+    + '</div>'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>邮箱</label><input id="crEmail" placeholder="联系邮箱"></div>'
+    + '<div class="field"><label>来源</label><input id="crSource" placeholder="展会/社媒/独立站等"></div>'
+    + '</div>'
+    + '<label>意向产品/备注</label>'
+    + '<textarea id="crNote" rows="2" placeholder="客户的物流需求或意向产品描述..."></textarea>'
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-outline" onclick="closeModal()">取消</button>'
+    + '<button class="btn btn-primary" id="btnCreate" onclick="doCreateLead()">创建线索</button>'
+    + '</div>';
   openModal(html);
 }
-async function doTransfer(id) {
-  let to = document.getElementById('newOwner').value;
-  let r = await apiPost(`/api/leads/transfer?lead_id=${id}&to_owner=${to}`);
-  if (r.ok) { showToast('转移成功'); closeModal(); location.reload(); }
+
+async function doCreateLead() {
+  var company = document.getElementById('crCompany').value.trim();
+  var mobile = document.getElementById('crMobile').value.trim();
+  if (!company || !mobile) return showToast('公司名称和手机号为必填项', 'error');
+
+  var btn = document.getElementById('btnCreate');
+  btn.disabled = true; btn.textContent = '检测中...';
+
+  var data = {
+    company_name: company,
+    contact_name: document.getElementById('crContact').value.trim(),
+    contact_mobile: mobile,
+    email: document.getElementById('crEmail').value.trim(),
+    source: document.getElementById('crSource').value.trim(),
+    logistics_type: document.getElementById('crLogistics').value,
+    target_market: document.getElementById('crMarket').value,
+    product_interest: document.getElementById('crNote').value.trim()
+  };
+
+  var r = await fetch('/api/leads/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json(); });
+
+  if (r.ok) {
+    showToast(r.msg);
+    closeModal(); setTimeout(function() { location.reload(); }, 500);
+  } else if (r.duplicate) {
+    // 显示判重浮窗 (PRD 3.1)
+    var cls = r.in_pool === 'private' ? 'danger' : 'warning';
+    var alertHtml = '<div class="dup-alert ' + cls + '">'
+      + '<strong>' + (r.in_pool === 'private' ? '⛔' : '⚠️') + ' ' + r.msg + '</strong>';
+    if (r.in_pool === 'public') {
+      alertHtml += '<br><button class="btn btn-success btn-sm" style="margin-top:8px;" onclick="claimFromDup(' + r.existing_lead_id + ')">直接认领该线索</button>';
+    }
+    alertHtml += '<br><button class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="document.getElementById(\'dupAlert\').innerHTML=\'\'">继续新建</button>';
+    alertHtml += '</div>';
+    document.getElementById('dupAlert').innerHTML = alertHtml;
+    btn.disabled = false; btn.textContent = '创建线索';
+  } else {
+    showToast(r.msg || '创建失败', 'error');
+    btn.disabled = false; btn.textContent = '创建线索';
+  }
+}
+
+async function claimFromDup(leadId) {
+  var r = await fetch('/api/leads/' + leadId + '/claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: 1, user_name: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast('认领成功！'); closeModal(); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 认领线索 — 含上限校验 (PRD 3.2)
+// ═══════════════════════════════════════════
+async function claimLead(leadId) {
+  var r = await fetch('/api/leads/' + leadId + '/claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: 1, user_name: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast(r.msg); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 线索详情 — 含跟进记录 (PRD 3.3)
+// ═══════════════════════════════════════════
+async function openDetailModal(leadId) {
+  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
+  var r = await apiGet('/api/leads/' + leadId);
+  if (!r.ok) { showToast('线索不存在', 'error'); closeModal(); return; }
+  var lead = r.lead;
+  var followUps = r.follow_ups;
+
+  var html = '<div style="max-height:70vh;overflow-y:auto;">'
+    + '<h3>' + lead.company_name + '</h3>'
+    + '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">'
+    + '<span class="badge badge-blue">' + lead.lead_status_label + '</span> '
+    + '创建于 ' + (lead.created_at || '').slice(0, 10) + ' · 跟进' + lead.follow_count + '次'
+    + '</p>';
+
+  // 基本信息
+  html += '<div class="detail-grid" style="margin-bottom:16px;">'
+    + '<div class="field"><label>联系人</label><span>' + (lead.contact_name || '-') + '</span></div>'
+    + '<div class="field"><label>手机号</label><span style="font-family:monospace;">' + lead.contact_mobile + '</span></div>'
+    + '<div class="field"><label>邮箱</label><span>' + (lead.email || '-') + '</span></div>'
+    + '<div class="field"><label>物流偏好</label><span>' + (lead.logistics_type || '-') + '</span></div>'
+    + '<div class="field"><label>目标市场</label><span>' + (lead.target_market || '-') + '</span></div>'
+    + '<div class="field"><label>来源</label><span>' + (lead.source || '-') + '</span></div>'
+    + '<div class="field"><label>归属销售</label><span>' + (lead.owner || '无(公海)') + '</span></div>';
+
+  // 回收倒计时
+  if (lead.reclaim_countdown_hours !== null) {
+    var cls = lead.reclaim_countdown_hours < 24 ? 'countdown-urgent' : 'countdown-warn';
+    html += '<div class="field"><label>回收倒计时</label><span class="' + cls + '" style="font-family:monospace;font-size:16px;">⏱ 剩 ' + lead.reclaim_countdown_hours + ' 小时</span></div>';
+  } else {
+    html += '<div class="field"><label>回收倒计时</label><span style="color:var(--text-secondary);">-</span></div>';
+  }
+  html += '</div>';
+
+  // 操作按钮 (仅私海)
+  if (lead.lead_status === 1) {
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px;">'
+      + '<button class="btn btn-primary btn-sm" onclick="showFollowUpForm(' + leadId + ')">+ 添加跟进</button>'
+      + '<button class="btn btn-success btn-sm" onclick="showConvertConfirm(' + leadId + ')">一键转化</button>'
+      + '</div>'
+      + '<div id="followUpFormArea"></div>'
+      + '<div id="convertConfirmArea"></div>';
+  }
+
+  // 跟进记录列表
+  html += '<h4 style="margin-top:16px;">跟进记录 (' + followUps.length + ')</h4>';
+  if (followUps.length === 0) {
+    html += '<p style="color:var(--text-secondary);text-align:center;padding:20px;">暂无跟进记录</p>';
+  } else {
+    followUps.forEach(function(fu) {
+      html += '<div class="follow-item">'
+        + '<span class="badge badge-blue">' + (fu.status || '跟进') + '</span>'
+        + '<span style="font-size:12px;color:var(--text-secondary);float:right;">' + (fu.created_at || '').slice(0,16).replace('T',' ') + '</span>'
+        + '<p style="margin-top:8px;font-size:14px;">' + fu.content + '</p>'
+        + '<div class="meta"><span>跟进人: ' + (fu.created_by || '-') + '</span>'
+        + (fu.next_follow_at ? '<span>下次跟进: ' + fu.next_follow_at.slice(0,16).replace('T',' ') + '</span>' : '')
+        + '</div></div>';
+    });
+  }
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  html += '</div>';
+  document.getElementById('modalContent').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// 添加跟进 (PRD 3.3)
+// ═══════════════════════════════════════════
+function showFollowUpForm(leadId) {
+  var area = document.getElementById('followUpFormArea');
+  area.innerHTML = '<div style="background:#f0f7ff;padding:16px;border-radius:8px;border:1px solid #bfdbfe;">'
+    + '<h4 style="font-size:14px;color:var(--primary-light);margin-bottom:12px;">新增跟进记录</h4>'
+    + '<select id="fuStatus" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;">'
+    + '{% for s in follow_statuses %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select>'
+    + '<textarea id="fuContent" rows="3" placeholder="跟进内容描述..." style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical;"></textarea>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">'
+    + '<label style="font-size:13px;">下次跟进时间:</label>'
+    + '<input type="datetime-local" id="fuNextTime" style="padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button class="btn btn-primary btn-sm" onclick="doFollowUp(' + leadId + ')">保存跟进</button>'
+    + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'followUpFormArea\').innerHTML=\'\'">取消</button>'
+    + '</div></div>';
+}
+
+async function doFollowUp(leadId) {
+  var content = document.getElementById('fuContent').value.trim();
+  if (!content) return showToast('请输入跟进内容', 'error');
+  var data = {
+    status: document.getElementById('fuStatus').value,
+    content: content,
+    next_follow_at: document.getElementById('fuNextTime').value || null,
+    created_by: '张晓明'
+  };
+  var r = await fetch('/api/leads/' + leadId + '/follow-up', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json(); });
+  if (r.ok) {
+    showToast('跟进记录已保存，回收倒计时已重置');
+    openDetailModal(leadId);  // 刷新详情
+  } else {
+    showToast(r.msg, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════
+// 线索转化 (PRD 3.4)
+// ═══════════════════════════════════════════
+function showConvertConfirm(leadId) {
+  var area = document.getElementById('convertConfirmArea');
+  area.innerHTML = '<div style="background:#f0fdf4;padding:16px;border-radius:8px;border:1px solid #bbf7d0;">'
+    + '<h4 style="font-size:14px;color:var(--success);margin-bottom:8px;">确认转化</h4>'
+    + '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">该线索即将转化，请选择目标类型：</p>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button class="btn btn-success btn-sm" onclick="doConvert(' + leadId + ', \'customer\')">转为客户</button>'
+    + '<button class="btn btn-sm" style="background:#7c3aed;color:#fff;" onclick="doConvert(' + leadId + ', \'opportunity\')">转为商机</button>'
+    + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'convertConfirmArea\').innerHTML=\'\'">取消</button>'
+    + '</div></div>';
+}
+
+async function doConvert(leadId, type) {
+  var r = await fetch('/api/leads/' + leadId + '/convert', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({convert_type: type, operator: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 手动回收 (管理员触发)
+// ═══════════════════════════════════════════
+async function manualReclaim() {
+  if (!confirm('确定要立即执行全量回收检测吗？\n将根据配置的N/M参数回收超时线索至公海。')) return;
+  var r = await apiPost('/api/leads/reclaim');
+  showToast('回收完成，共回收 ' + r.reclaimed + ' 条线索至公海 (N=' + r.params.N_days + '天, M=' + r.params.M_days + '天)');
+  setTimeout(function() { location.reload(); }, 1000);
 }
 </script>
 {% endblock %}

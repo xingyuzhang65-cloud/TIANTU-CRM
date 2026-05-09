@@ -1,11 +1,88 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.metrics-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+.metric-mini { text-align:center; padding:12px; border-radius:8px; background:#f8fafc; }
+.metric-mini .m-value { font-size:20px; font-weight:700; }
+.metric-mini .m-label { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.health-bar-wrap { margin-top:8px; }
+.lead-trace { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:#f0f7ff; border-radius:6px; font-size:13px; }
+</style>
+
 <div class="flex-between mb-4">
   <div>
     <a href="/customers" style="color:var(--text-secondary);font-size:13px;">← 返回客户列表</a>
     <h1 style="font-size:22px;margin-top:4px;">{{ customer.company_name }}</h1>
+    {% if lead_info %}
+    <div class="lead-trace" style="margin-top:4px;">
+      🔗 线索溯源: <a href="javascript:void(0)" onclick="openLeadDetail({{ lead_info.id }})" style="color:var(--primary-light);font-weight:500;">来自 {{ lead_info.company_name }}</a>
+      <span class="text-sm">· {{ lead_info.contact_mobile }} · {{ lead_info.source }}</span>
+    </div>
+    {% endif %}
   </div>
-  <button class="btn btn-primary" onclick="getAIInsight({{ customer.id }})">🤖 AI客户洞察</button>
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-primary" onclick="getAIInsight({{ customer.id }})">🤖 AI客户洞察</button>
+    <button class="btn btn-outline btn-sm" onclick="openHealthDetail()" style="font-size:12px;">📊 指标明细</button>
+  </div>
+</div>
+
+<!-- PRD 指标卡片行 -->
+<div class="metrics-grid" style="margin-bottom:16px;">
+  <div class="panel" style="margin:0;">
+    <div class="panel-body" style="text-align:center;">
+      <div style="font-size:24px;font-weight:700;color:{% if health_color=='green' %}var(--success){% elif health_color=='orange' %}var(--warning){% else %}var(--danger){% endif %};">
+        {{ customer.health_score }}
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);">健康分</div>
+      <div class="health-bar-wrap">
+        <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:{{ customer.health_score }}%;border-radius:4px;
+            background:{% if customer.health_score >= 80 %}#10b981{% elif customer.health_score >= 60 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
+        </div>
+      </div>
+      {% if health_breakdown %}
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-secondary);margin-top:4px;">
+        <span>稳定{{ health_breakdown.stability or 0 }}/40</span>
+        <span>跟进{{ health_breakdown.follow_activity or 0 }}/30</span>
+        <span>运单{{ health_breakdown.order_activity or 0 }}/30</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel" style="margin:0;">
+    <div class="panel-body">
+      <div class="metric-mini">
+        <div class="m-value">{% if customer.volume_mom %}{% if customer.volume_mom >= 0 %}+{% endif %}{{ "%.1f"|format(customer.volume_mom) }}%{% else %}-{% endif %}</div>
+        <div class="m-label">货量环比 (MoM)</div>
+        <div style="font-size:20px;margin-top:4px;">
+          {% if customer.volume_mom and customer.volume_mom > 5 %}🟢
+          {% elif customer.volume_mom and customer.volume_mom < -5 %}🔴
+          {% else %}🟡{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin:0;">
+    <div class="panel-body">
+      <div class="metric-mini">
+        <div class="m-value">{{ customer.monthly_order_count or 0 }}票</div>
+        <div class="m-label">近30天运单</div>
+        <div style="margin-top:4px;">
+          {% if customer.order_frequency_tag %}
+          <span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;
+            {% if customer.order_frequency_tag == 'Daily' %}background:#dcfce7;color:#166534;
+            {% elif customer.order_frequency_tag == 'Weekly' %}background:#dbeafe;color:#1e40af;
+            {% elif customer.order_frequency_tag == 'Monthly' %}background:#fef3c7;color:#92400e;
+            {% else %}background:#f1f5f9;color:#64748b;{% endif %}">
+            {{ customer.order_frequency_tag }}
+          </span>
+          {% else %}-{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div style="display:flex;gap:16px;align-items:flex-start;">
@@ -22,7 +99,15 @@
       <div><span class="text-muted">发货频率</span><br>{{ customer.shipping_frequency or '-' }}</div>
       <div><span class="text-muted">常用路线</span><br>{{ customer.usual_routes or '-' }}</div>
       <div><span class="text-muted">出口资质</span><br>{{ customer.export_qualification or '-' }}</div>
-      <div><span class="text-muted">月均货量/营收</span><br><strong>{{ customer.avg_monthly_volume or 0 }}方 / ¥{{ "{:,.0f}".format(customer.avg_monthly_revenue or 0) }}</strong></div>
+      <div>
+        <span class="text-muted">月均货量/营收</span><br>
+        <strong>{{ customer.avg_monthly_volume or 0 }}方 / ¥{{ "{:,.0f}".format(customer.avg_monthly_revenue or 0) }}</strong>
+        {% if customer.volume_yoy %}
+        <span style="font-size:11px;{% if customer.volume_yoy >= 0 %}color:var(--success);{% else %}color:var(--danger);{% endif %}">
+          {% if customer.volume_yoy >= 0 %}↑{% else %}↓{% endif %}{{ "%.0f"|format(customer.volume_yoy|abs) }}% YoY
+        </span>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>
@@ -157,9 +242,60 @@
 
 <script>
 var custId = {{ customer.id }};
+var custHealth = {{ customer.health_score }};
 var allStatuses = {{ all_statuses | tojson }};
 var statusLabels = {{ status_labels | tojson }};
 var requirements = {{ requirements | tojson }};
+
+// ── 健康分明细弹窗 ──
+async function openHealthDetail() {
+  var r = await apiGet('/api/customers/' + custId + '/metrics');
+  if (!r.ok) { showToast('加载失败', 'error'); return; }
+  var m = r.metrics;
+  var html = '<h3>📊 指标明细</h3>';
+  html += '<p style="font-size:24px;font-weight:700;text-align:center;color:' + (m.health_score >= 80 ? 'var(--success)' : m.health_score >= 60 ? 'var(--warning)' : 'var(--danger)') + ';">' + m.health_score + ' 分</p>';
+  html += '<div style="height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:12px 0;"><div style="height:100%;width:' + m.health_score + '%;border-radius:6px;background:' + (m.health_score >= 80 ? '#10b981' : m.health_score >= 60 ? '#f59e0b' : '#ef4444') + ';"></div></div>';
+  var hb = m.health_breakdown || {};
+  var items = [
+    {label:'发货稳定性', score:hb.stability||0, max:40},
+    {label:'跟进活跃度', score:hb.follow_activity||0, max:30},
+    {label:'运单活跃度', score:hb.order_activity||0, max:30},
+  ];
+  items.forEach(function(it) {
+    var pct = it.max > 0 ? (it.score / it.max * 100) : 0;
+    html += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:12px;"><span>' + it.label + '</span><span>' + it.score + '/' + it.max + '</span></div>';
+    html += '<div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:' + (pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444') + ';border-radius:3px;"></div></div></div>';
+  });
+  html += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">';
+  html += '<div>MoM: <strong>' + (m.volume_mom != null ? (m.volume_mom >= 0 ? '+' : '') + m.volume_mom + '%' : '-') + '</strong></div>';
+  html += '<div>YoY: <strong>' + (m.volume_yoy != null ? (m.volume_yoy >= 0 ? '+' : '') + m.volume_yoy + '%' : '-') + '</strong></div>';
+  html += '<div>近30天: <strong>' + (m.monthly_order_count || 0) + '票</strong></div>';
+  html += '<div>频率: <strong>' + (m.order_frequency_tag || 'Inactive') + '</strong></div>';
+  html += '</div>';
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  openModal(html);
+}
+
+// ── 线索溯源弹窗 ──
+async function openLeadDetail(leadId) {
+  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
+  var r = await apiGet('/api/leads/' + leadId);
+  if (!r.ok) { showToast('线索不存在', 'error'); closeModal(); return; }
+  var l = r.lead;
+  var html = '<h3>🔗 线索溯源</h3>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">';
+  html += '<div><span style="color:var(--text-secondary);">公司名称</span><br><strong>' + l.company_name + '</strong></div>';
+  html += '<div><span style="color:var(--text-secondary);">状态</span><br>' + l.lead_status_label + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">联系人</span><br>' + (l.contact_name || '-') + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">手机号</span><br>' + l.contact_mobile + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">物流偏好</span><br>' + (l.logistics_type || '-') + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">目标市场</span><br>' + (l.target_market || '-') + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">归属</span><br>' + (l.owner || '无') + '</div>';
+  html += '<div><span style="color:var(--text-secondary);">来源</span><br>' + (l.source || '-') + '</div>';
+  html += '</div>';
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  openModal(html);
+}
 
 function showStatusPicker() {
   let html = '<h3>编辑客户状态</h3>';

@@ -1,117 +1,290 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+/* ── 客户卡片专用样式 (PRD §4) ── */
+.status-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:20px; }
+.status-tabs button { border-radius:20px; padding:6px 16px; font-size:12px; border:1px solid var(--border); background:#fff; color:var(--text-secondary); cursor:pointer; transition:all .2s; font-weight:500; }
+.status-tabs button:hover { border-color:var(--primary-light); color:var(--primary-light); }
+.status-tabs button.active { background:var(--primary-light); color:#fff; border-color:var(--primary-light); }
+
+.customer-card { margin-bottom:16px; cursor:pointer; transition:box-shadow .2s; }
+.customer-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.1); }
+
+.card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.card-info { flex:1; min-width:0; }
+.card-name { font-size:15px; font-weight:600; color:var(--text); }
+.card-tags { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
+
+.card-body { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:16px; padding:12px 0; }
+.card-section { }
+.card-section .label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.card-section .value { font-size:14px; font-weight:500; }
+
+.metric-value { cursor:pointer; position:relative; }
+.metric-value:hover { color:var(--primary-light); text-decoration:underline; }
+
+.trend-arrow { display:inline-block; font-size:14px; margin-left:4px; }
+.trend-up { color:var(--success); }
+.trend-down { color:var(--danger); }
+.trend-flat { color:var(--text-secondary); }
+
+.health-bar-wrap { display:flex; align-items:center; gap:8px; min-width:140px; }
+.health-bar { flex:1; height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden; }
+.health-bar-fill { height:100%; border-radius:5px; transition:width .3s, background .3s; }
+
+.freq-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+.freq-tag.Daily { background:#dcfce7; color:#166534; }
+.freq-tag.Weekly { background:#dbeafe; color:#1e40af; }
+.freq-tag.Monthly { background:#fef3c7; color:#92400e; }
+.freq-tag.Inactive { background:#f1f5f9; color:#64748b; }
+
+.status-dropdown-btn { padding:5px 14px; border-radius:12px; font-size:12px; border:none; cursor:pointer; font-weight:500; }
+.status-dropdown-btn.new, .status-dropdown-btn.contacted { background:#dbeafe; color:#1e40af; }
+.status-dropdown-btn.nurturing { background:#e0e7ff; color:#3730a3; }
+.status-dropdown-btn.quoted { background:#ede9fe; color:#5b21b6; }
+.status-dropdown-btn.negotiating { background:#fef3c7; color:#92400e; }
+.status-dropdown-btn.trial { background:#fce7f3; color:#9d174d; }
+.status-dropdown-btn.active { background:#d1fae5; color:#065f46; }
+.status-dropdown-btn.receding { background:#fef3c7; color:#92400e; }
+.status-dropdown-btn.churned { background:#fee2e2; color:#991b1b; }
+.status-dropdown-btn.disqualified { background:#f1f5f9; color:#475569; }
+
+.order-drill-table { width:100%; font-size:12px; border-collapse:collapse; }
+.order-drill-table th { background:#f8fafc; padding:8px; text-align:left; border-bottom:1px solid var(--border); }
+.order-drill-table td { padding:8px; border-bottom:1px solid var(--border); }
+</style>
+
 <div class="flex-between mb-2">
   <h1 style="font-size:22px;">👥 客户与商机管理</h1>
-  <input type="text" id="searchInput" placeholder="搜索客户..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:200px;"
-    oninput="filterCustomers()">
-</div>
-<!-- 状态筛选 — 最右侧 -->
-<div style="text-align:right;margin-bottom:12px;">
-  <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-    <button class="btn btn-sm btn-outline status-filter" data-status="all">全部</button>
-    {% for s in all_statuses %}
-    <button class="btn btn-sm btn-outline status-filter" data-status="{{ s }}">{{ status_labels[s] }}</button>
-    {% endfor %}
+  <div style="display:flex;gap:8px;">
+    <input type="text" id="searchInput" placeholder="搜索客户名称/联系人..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:220px;"
+      oninput="applyFilters()">
+    <button class="btn btn-outline btn-sm" onclick="triggerMetricsCalc()" title="手动计算全量客户指标">📊 计算指标</button>
   </div>
 </div>
 
-{% for c in customers %}
-<div class="panel customer-card" data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}" data-status="{{ c.lifecycle_status }}" style="margin-bottom:14px;cursor:pointer;" onclick="location.href='/customer/{{ c.id }}'">
-  <div class="panel-header">
-    <div>
-      <span style="font-size:15px;">{{ c.company_name }}</span>
-      <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}" style="margin-left:6px;">{{ c.customer_level }}级</span>
-      {% if c.health_score >= 80 %}<span class="badge badge-green">健康</span>
-      {% elif c.health_score >= 60 %}<span class="badge badge-yellow">关注</span>
-      {% else %}<span class="badge badge-red">预警</span>
-      {% endif %}
+<!-- PRD §4: 顶部状态Tab导航 -->
+<div class="status-tabs" id="statusTabs">
+  <button class="active" data-status="all" onclick="setStatusFilter('all', this)">全部</button>
+  {% for s in all_statuses %}
+  <button data-status="{{ s }}" onclick="setStatusFilter('{{ s }}', this)">{{ status_labels[s] }}</button>
+  {% endfor %}
+</div>
+
+<!-- 客户卡片列表 -->
+<div id="customerList">
+  {% for cd in customers %}
+  {% set c = cd.obj %}
+  <div class="panel customer-card" data-status="{{ c.lifecycle_status }}"
+       data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}"
+       data-cid="{{ c.id }}">
+
+    <!-- 卡片顶部: 公司名 + 等级 + 健康标签 + 状态按钮 -->
+    <div class="panel-header" onclick="location.href='/customer/{{ c.id }}'" style="cursor:pointer;">
+      <div class="card-top">
+        <div class="card-info">
+          <span class="card-name">{{ c.company_name }}</span>
+          <div class="card-tags">
+            <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}">{{ c.customer_level }}级</span>
+            <span class="badge" style="{% if cd.health_color=='green' %}background:#d1fae5;color:#065f46;{% elif cd.health_color=='orange' %}background:#fef3c7;color:#92400e;{% else %}background:#fee2e2;color:#991b1b;{% endif %}">
+              {{ cd.health_label }}
+            </span>
+            {% if c.order_frequency_tag and c.order_frequency_tag != 'Inactive' %}
+            <span class="freq-tag {{ c.order_frequency_tag }}">{{ c.order_frequency_tag }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <button class="status-dropdown-btn {{ c.lifecycle_status }}" style="flex-shrink:0;"
+                onclick="event.stopPropagation();showStatusPicker({{ c.id }}, '{{ c.lifecycle_status }}')">
+          {{ status_labels.get(c.lifecycle_status, c.lifecycle_status) }} ▾
+        </button>
+      </div>
     </div>
-    <!-- 状态在右上角 -->
-    <button class="status-badge
-      {% if c.lifecycle_status == 'active' %}badge-green{% elif c.lifecycle_status in ('churned','disqualified') %}badge-red
-      {% elif c.lifecycle_status in ('nurturing','contacted','new') %}badge-blue
-      {% elif c.lifecycle_status in ('quoted','negotiating','trial') %}badge-purple
-      {% elif c.lifecycle_status == 'receding' %}badge-yellow
-      {% else %}badge-gray{% endif %}"
-      style="border:none;cursor:pointer;font-size:12px;padding:4px 12px;border-radius:12px;"
-      onclick="event.stopPropagation();showStatusPicker({{ c.id }}, '{{ c.lifecycle_status }}')">
-      {{ status_labels.get(c.lifecycle_status, c.lifecycle_status) }} ▾
-    </button>
-  </div>
-  <div class="panel-body" style="padding:10px 20px;">
-    <div style="display:flex;gap:20px;flex-wrap:wrap;">
-      <div><span class="text-muted">品类</span><br>{{ c.main_category or '-' }}</div>
-      <div><span class="text-muted">发货频率</span><br>{{ c.shipping_frequency or '-' }}</div>
-      <div><span class="text-muted">路线</span><br>{{ c.usual_routes or '-' }}</div>
-      <div><span class="text-muted">月均货量</span><br>{{ c.avg_monthly_volume or 0 }}方</div>
-      <div><span class="text-muted">月均营收</span><br><strong>¥{{ "{:,.0f}".format(c.avg_monthly_revenue or 0) }}</strong></div>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-        <span class="text-sm">健康分 {{ c.health_score }}</span>
-        <div class="progress-bar" style="width:80px;">
-          <div class="progress-fill {% if c.health_score>=80 %}progress-green{% elif c.health_score>=60 %}progress-yellow{% else %}progress-red{% endif %}" style="width:{{ c.health_score }}%;"></div>
+
+    <!-- 卡片中部: 业务信息 + 数据看板 + 健康分 -->
+    <div class="panel-body" style="padding:12px 20px 16px;">
+      <div class="card-body">
+        <!-- 业务信息 (PRD: 主营品类/发货频率/常走路线) -->
+        <div class="card-section">
+          <div class="label">主营品类</div>
+          <div class="value">{{ c.main_category or '-' }}</div>
+        </div>
+        <div class="card-section">
+          <div class="label">发货频率</div>
+          <div class="value">{{ c.shipping_frequency or '-' }}</div>
+        </div>
+        <div class="card-section">
+          <div class="label">常走路线</div>
+          <div class="value" style="font-size:12px;">{{ c.usual_routes or '-' }}</div>
+        </div>
+
+        <!-- 数据看板: 月均货量(MoM) + 月均营收 (PRD §4) -->
+        <div class="card-section">
+          <div class="label">月均货量</div>
+          <div class="value metric-value" onclick="event.stopPropagation();openOrderDrill({{ c.id }}, '{{ c.company_name }}')" title="点击查看最近运单">
+            {{ "%.1f"|format(c.avg_monthly_volume or 0) }}方
+            {% if cd.mom_trend == 'up' %}
+            <span class="trend-arrow trend-up">▲{{ "%.0f"|format(cd.mom_value) }}%</span>
+            {% elif cd.mom_trend == 'down' %}
+            <span class="trend-arrow trend-down">▼{{ "%.0f"|format(cd.mom_value) }}%</span>
+            {% else %}
+            <span class="trend-arrow trend-flat">→</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card-section">
+          <div class="label">月均营收</div>
+          <div class="value" style="font-weight:700;font-size:16px;">¥{{ "{:,.0f}".format(c.avg_monthly_revenue or 0) }}</div>
+        </div>
+
+        <!-- 健康分进度条 (PRD §4: 彩色进度条 + 分值) -->
+        <div class="health-bar-wrap" onclick="event.stopPropagation();openHealthDetail({{ c.id }}, '{{ c.company_name }}')" title="点击查看健康分明细" style="cursor:pointer;">
+          <div>
+            <div class="label" style="margin-bottom:2px;">健康分</div>
+            <div style="font-size:18px;font-weight:700;color:{% if cd.health_color=='green' %}var(--success){% elif cd.health_color=='orange' %}var(--warning){% else %}var(--danger){% endif %};">
+              {{ c.health_score }}
+            </div>
+          </div>
+          <div class="health-bar">
+            <div class="health-bar-fill" style="width:{{ c.health_score }}%;
+              background:{% if c.health_score >= 80 %}#10b981{% elif c.health_score >= 60 %}#f59e0b{% else %}#ef4444{% endif %};">
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
+  {% endfor %}
+  {% if not customers %}
+  <div style="text-align:center;padding:80px;color:var(--text-secondary);">暂无客户数据</div>
+  {% endif %}
 </div>
-{% endfor %}
 
 <script>
+// ═══════════════════════════════════════════
+// 状态Tab过滤 (PRD §4)
+// ═══════════════════════════════════════════
+var currentStatus = 'all';
+
+function setStatusFilter(status, btn) {
+  currentStatus = status;
+  document.querySelectorAll('#statusTabs button').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  var keyword = document.getElementById('searchInput').value.toLowerCase();
+  var cards = document.querySelectorAll('.customer-card');
+  cards.forEach(function(card) {
+    var matchSearch = card.dataset.search.toLowerCase().indexOf(keyword) >= 0;
+    var matchStatus = currentStatus === 'all' || card.dataset.status === currentStatus;
+    card.style.display = (matchSearch && matchStatus) ? '' : 'none';
+  });
+}
+
+// ═══════════════════════════════════════════
+// 运单钻取弹窗 (PRD §4 数据穿透)
+// ═══════════════════════════════════════════
+async function openOrderDrill(cid, companyName) {
+  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
+  var r = await apiGet('/api/customers/' + cid + '/orders');
+  if (!r.ok) { showToast('加载失败', 'error'); closeModal(); return; }
+
+  var html = '<h3>📦 ' + companyName + ' - 最近运单</h3>';
+  if (r.orders.length === 0) {
+    html += '<p style="text-align:center;padding:30px;color:var(--text-secondary);">暂无运单记录</p>';
+  } else {
+    html += '<div style="max-height:400px;overflow-y:auto;"><table class="order-drill-table"><thead><tr>'
+      + '<th>运单号</th><th>路线</th><th>货品</th><th>重量</th><th>起运日</th><th>状态</th></tr></thead><tbody>';
+    r.orders.forEach(function(o) {
+      var statusColors = {delivered:'badge-green',arrived:'badge-green',transit:'badge-blue',departed:'badge-blue',
+        customs:'badge-yellow',received:'badge-purple',warehouse:'badge-gray'};
+      var sc = statusColors[o.status] || 'badge-gray';
+      html += '<tr>'
+        + '<td style="font-family:monospace;">' + (o.tracking_number || '-') + '</td>'
+        + '<td>' + (o.route_detail || '-') + '</td>'
+        + '<td>' + (o.cargo_desc || '-') + '</td>'
+        + '<td>' + (o.weight_kg || 0) + 'kg</td>'
+        + '<td>' + (o.etd || '-') + '</td>'
+        + '<td><span class="badge ' + sc + '">' + o.status + '</span></td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  document.getElementById('modalContent').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// 健康分明细弹窗 (PRD §3.3)
+// ═══════════════════════════════════════════
+async function openHealthDetail(cid, companyName) {
+  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
+  var r = await apiGet('/api/customers/' + cid + '/metrics');
+  if (!r.ok) { showToast('加载失败', 'error'); closeModal(); return; }
+  var m = r.metrics;
+
+  var html = '<h3>📊 ' + companyName + ' - 健康分明细</h3>';
+  html += '<p style="font-size:24px;font-weight:700;margin:12px 0;text-align:center;'
+    + 'color:' + (m.health_score >= 80 ? 'var(--success)' : m.health_score >= 60 ? 'var(--warning)' : 'var(--danger)') + ';">'
+    + m.health_score + ' 分</p>';
+
+  // 健康分进度条
+  html += '<div style="height:16px;background:#e2e8f0;border-radius:8px;overflow:hidden;margin:12px 0;">'
+    + '<div style="height:100%;width:' + m.health_score + '%;border-radius:8px;background:'
+    + (m.health_score >= 80 ? '#10b981' : m.health_score >= 60 ? '#f59e0b' : '#ef4444') + ';"></div></div>';
+
+  // 分项得分
+  var hb = m.health_breakdown || {};
+  var items = [
+    {label: '发货稳定性', score: hb.stability || 0, max: 40, desc: '货量MoM在±10%内满分，每下降5%扣2分'},
+    {label: '跟进活跃度', score: hb.follow_activity || 0, max: 30, desc: '近7天有效跟进满分，7-15天15分'},
+    {label: '运单活跃度', score: hb.order_activity || 0, max: 30, desc: '近30天有运单满分，30-60天15分'},
+  ];
+  html += '<div style="margin:16px 0;">';
+  items.forEach(function(item) {
+    var pct = item.max > 0 ? (item.score / item.max * 100) : 0;
+    var barColor = pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
+    html += '<div style="margin-bottom:12px;">'
+      + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">'
+      + '<span>' + item.label + '</span>'
+      + '<span style="font-weight:600;">' + item.score + ' / ' + item.max + '</span></div>'
+      + '<div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
+      + '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:4px;"></div></div>'
+      + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">' + item.desc + '</div></div>';
+  });
+  html += '</div>';
+
+  // 其他指标
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;padding:12px;background:#f8fafc;border-radius:8px;">'
+    + '<div><span style="color:var(--text-secondary);">货量MoM:</span> <strong>' + (m.volume_mom != null ? (m.volume_mom >= 0 ? '+' : '') + m.volume_mom + '%' : '-') + '</strong></div>'
+    + '<div><span style="color:var(--text-secondary);">货量YoY:</span> <strong>' + (m.volume_yoy != null ? (m.volume_yoy >= 0 ? '+' : '') + m.volume_yoy + '%' : '-') + '</strong></div>'
+    + '<div><span style="color:var(--text-secondary);">近30天运单:</span> <strong>' + (m.monthly_order_count || 0) + '票</strong></div>'
+    + '<div><span style="color:var(--text-secondary);">下单频率:</span> <strong class="freq-tag ' + (m.order_frequency_tag || 'Inactive') + '">' + (m.order_frequency_tag || 'Inactive') + '</strong></div>'
+    + '<div><span style="color:var(--text-secondary);">月均货量:</span> <strong>' + (m.avg_monthly_volume || 0) + '方</strong></div>'
+    + '<div><span style="color:var(--text-secondary);">月均营收:</span> <strong>¥' + ((m.avg_monthly_revenue || 0)).toLocaleString() + '</strong></div>'
+    + '<div style="grid-column:1/-1;"><span style="color:var(--text-secondary);">计算时间:</span> ' + (m.last_calc_at || '未计算') + '</div>'
+    + '</div>';
+
+  html += '<div class="modal-actions><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  document.getElementById('modalContent').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// 状态流转 (复用原有逻辑)
+// ═══════════════════════════════════════════
 var allStatuses = {{ all_statuses | tojson }};
 var statusLabels = {{ status_labels | tojson }};
 var requirements = {{ requirements | tojson }};
 
-// Default: show 待处理
-var defaultStatus = 'new';
-
-// Init filters
-document.querySelectorAll('.status-filter').forEach(btn => {
-  btn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    document.querySelectorAll('.status-filter').forEach(b => {
-      b.classList.remove('active');
-      b.style.background = ''; b.style.color = ''; b.style.borderColor = '';
-    });
-    this.classList.add('active');
-    this.style.background = 'var(--primary-light)';
-    this.style.color = '#fff';
-    this.style.borderColor = 'var(--primary-light)';
-    filterCustomers();
-  });
-  btn.style.cssText = btn.style.cssText + 'border-radius:20px;padding:4px 14px;font-size:12px;';
-});
-
-// Activate default filter
-let defaultBtn = document.querySelector('.status-filter[data-status="' + defaultStatus + '"]');
-if (defaultBtn) {
-  defaultBtn.classList.add('active');
-  defaultBtn.style.background = 'var(--primary-light)';
-  defaultBtn.style.color = '#fff';
-  defaultBtn.style.borderColor = 'var(--primary-light)';
-  // Remove active from "全部"
-  document.querySelector('.status-filter[data-status="all"]').classList.remove('active');
-}
-
-filterCustomers();
-
-function filterCustomers() {
-  let q = document.getElementById('searchInput').value.toLowerCase();
-  let activeBtn = document.querySelector('.status-filter.active');
-  let status = activeBtn ? activeBtn.dataset.status : defaultStatus;
-  document.querySelectorAll('.customer-card').forEach(c => {
-    let matchSearch = c.dataset.search.toLowerCase().includes(q);
-    let matchStatus = status === 'all' || c.dataset.status === status;
-    c.style.display = (matchSearch && matchStatus) ? '' : 'none';
-  });
-}
-
 function showStatusPicker(cid, currentStatus) {
-  let html = '<h3>编辑客户状态</h3>';
+  var html = '<h3>编辑客户状态</h3>';
   html += '<p style="margin-bottom:12px;"><span class="text-muted">当前:</span> <strong>' + (statusLabels[currentStatus] || currentStatus) + '</strong></p>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
-  for (let i = 0; i < allStatuses.length; i++) {
-    let s = allStatuses[i];
-    let isCurrent = s === currentStatus;
+  for (var i = 0; i < allStatuses.length; i++) {
+    var s = allStatuses[i];
+    var isCurrent = s === currentStatus;
     html += '<button class="btn ' + (isCurrent ? 'btn-primary' : 'btn-outline') + '"';
     html += ' onclick="pickStatus(' + cid + ', \'' + s + '\')">' + (statusLabels[s] || s) + '</button>';
   }
@@ -121,31 +294,34 @@ function showStatusPicker(cid, currentStatus) {
 
 function pickStatus(cid, toStatus) {
   closeModal();
-  let reqs = requirements[toStatus] || [];
-  let needsExtra = reqs.length > 0;
-  showTransitionForm(cid, toStatus, reqs);
+  var reqs = requirements[toStatus] || [];
+  if (reqs.length > 0) {
+    showTransitionForm(cid, toStatus, reqs);
+  } else {
+    doTransitionSimple(cid, toStatus);
+  }
 }
 
 function showTransitionForm(cid, toStatus, reqs) {
-  let extraFields = '';
+  var extraFields = '';
   if (reqs.indexOf('quotation_id') >= 0) {
-    extraFields += '<label>关联报价单ID <span style="color:var(--danger)">*必填</span></label><input type="number" id="quotation_id" placeholder="输入已创建的报价单编号" required>';
+    extraFields += '<label>关联报价单ID <span style="color:var(--danger)">*必填</span></label><input type="number" id="tf_quotation_id" placeholder="输入已创建的报价单编号" required>';
   }
   if (reqs.indexOf('negotiation_notes') >= 0) {
-    extraFields += '<label>谈判纪要 <span style="color:var(--danger)">*必填</span></label><textarea id="negotiation_notes" placeholder="记录谈判要点：价格/账期/赔付条款等" required></textarea>';
+    extraFields += '<label>谈判纪要 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_negotiation_notes" placeholder="记录谈判要点" required></textarea>';
   }
   if (reqs.indexOf('order_count') >= 0) {
-    extraFields += '<label>试单票数 <span style="color:var(--danger)">*必填</span></label><input type="number" id="order_count" placeholder="客户计划试单的票数" required>';
+    extraFields += '<label>试单票数 <span style="color:var(--danger)">*必填</span></label><input type="number" id="tf_order_count" placeholder="计划试单票数" required>';
   }
   if (reqs.indexOf('churn_reason') >= 0) {
-    extraFields += '<label>流失原因 <span style="color:var(--danger)">*必填</span></label><textarea id="churn_reason" placeholder="记录客户流失的具体原因（价格/服务/竞对等）" required></textarea>';
+    extraFields += '<label>流失原因 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_churn_reason" placeholder="具体流失原因" required></textarea>';
   }
   if (reqs.indexOf('disqualify_reason') >= 0) {
-    extraFields += '<label>无效原因 <span style="color:var(--danger)">*必填</span></label><textarea id="disqualify_reason" placeholder="记录核实为无效的具体原因（同行/号码错误/无业务等）" required></textarea>';
+    extraFields += '<label>无效原因 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_disqualify_reason" placeholder="具体无效原因" required></textarea>';
   }
-  extraFields += '<label>备注 <span class="text-muted">(选填)</span></label><textarea id="remark" placeholder="补充说明..."></textarea>';
+  extraFields += '<label>备注 <span class="text-muted">(选填)</span></label><textarea id="tf_remark" placeholder="补充说明..."></textarea>';
 
-  let html = '<h3>🔄 状态编辑</h3>';
+  var html = '<h3>🔄 状态编辑</h3>';
   html += '<p style="margin-bottom:12px;">目标: <strong style="color:var(--primary-light);">' + (statusLabels[toStatus] || toStatus) + '</strong></p>';
   html += extraFields;
   html += '<div style="margin-top:12px;">';
@@ -155,20 +331,38 @@ function showTransitionForm(cid, toStatus, reqs) {
   openModal(html);
 }
 
-async function doTransition(cid, toStatus) {
-  let params = new URLSearchParams();
+async function doTransitionSimple(cid, toStatus) {
+  var params = new URLSearchParams();
   params.set('to_status', toStatus);
   params.set('operator', '张晓明');
-  let el;
-  el = document.getElementById('quotation_id'); if (el) params.set('quotation_id', el.value);
-  el = document.getElementById('negotiation_notes'); if (el) params.set('negotiation_notes', el.value);
-  el = document.getElementById('order_count'); if (el) params.set('order_count', el.value);
-  el = document.getElementById('churn_reason'); if (el) params.set('churn_reason', el.value);
-  el = document.getElementById('disqualify_reason'); if (el) params.set('disqualify_reason', el.value);
-  el = document.getElementById('remark'); if (el && el.value.trim()) params.set('remark', el.value.trim());
-  let r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
-  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(() => location.reload(), 800); }
+  var r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 800); }
   else showToast(r.msg, 'error');
+}
+
+async function doTransition(cid, toStatus) {
+  var params = new URLSearchParams();
+  params.set('to_status', toStatus);
+  params.set('operator', '张晓明');
+  var el;
+  el = document.getElementById('tf_quotation_id'); if (el) params.set('quotation_id', el.value);
+  el = document.getElementById('tf_negotiation_notes'); if (el) params.set('negotiation_notes', el.value);
+  el = document.getElementById('tf_order_count'); if (el) params.set('order_count', el.value);
+  el = document.getElementById('tf_churn_reason'); if (el) params.set('churn_reason', el.value);
+  el = document.getElementById('tf_disqualify_reason'); if (el) params.set('disqualify_reason', el.value);
+  el = document.getElementById('tf_remark'); if (el && el.value.trim()) params.set('remark', el.value.trim());
+  var r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 800); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 手动触发指标计算
+// ═══════════════════════════════════════════
+async function triggerMetricsCalc() {
+  var r = await apiPost('/api/customers/metrics/calculate');
+  showToast(r.msg);
+  setTimeout(function() { location.reload(); }, 1500);
 }
 </script>
 {% endblock %}

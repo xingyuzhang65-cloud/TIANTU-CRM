@@ -4,10 +4,11 @@ sys.stdout.reconfigure(encoding='utf-8')
 from database import SessionLocal, engine, Base
 from models import (
     Lead, Customer, Opportunity, Quotation, Order, TrackingEvent,
-    CreditInfo, ActivityLog, Complaint,
+    CreditInfo, ActivityLog, Complaint, FollowUp, ClaimRecord, SystemConfig,
     STATUS_NEW, STATUS_CONTACTED, STATUS_DISQUALIFIED,
     STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING,
     STATUS_TRIAL, STATUS_ACTIVE, STATUS_RECEDING, STATUS_CHURNED,
+    LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
 )
 
 
@@ -16,7 +17,7 @@ def seed():
     db = SessionLocal()
 
     for tbl in [Complaint, TrackingEvent, Order, Quotation, Opportunity,
-                CreditInfo, ActivityLog, Customer, Lead]:
+                CreditInfo, ActivityLog, Customer, FollowUp, ClaimRecord, Lead, SystemConfig]:
         db.query(tbl).delete()
     db.commit()
 
@@ -24,32 +25,76 @@ def seed():
 
     # ═══════════════════ 线索公海池 (潜客阶段: new/contacted/disqualified) ═══════════════════
     leads = [
-        Lead(company_name="深圳思科达电子有限公司", contact_name="陈总", phone="13800138001",
-             email="chen@scd-tech.cn", source="展会", country="中国", product_interest="海派-FBA头程",
-             status=STATUS_CONTACTED, owner="张晓明", assigned_at=now(), last_followed=now(), follow_count=5),
-        Lead(company_name="广州恒通服装贸易有限公司", contact_name="李经理", phone="13800138002",
-             email="li@htfashion.com", source="独立站", country="中国", product_interest="空派-快件",
-             status=STATUS_NEW, owner="张晓明", assigned_at=now(),
-             last_followed=now() - datetime.timedelta(days=8), follow_count=0, auto_reclaim=True),
-        Lead(company_name="义乌欧凯进出口有限公司", contact_name="王芳", phone="13800138003",
-             email="wangf@okexport.com", source="社媒", country="中国", product_interest="铁运-中欧班列",
-             status=STATUS_CONTACTED, owner="李强", assigned_at=now(), last_followed=now(), follow_count=4),
-        Lead(company_name="杭州锐思科技有限公司", contact_name="赵总", phone="13800138004",
-             email="zhao@ruisi-tech.com", source="海关数据", country="中国", product_interest="海派-重货",
-             status=STATUS_NEW, owner=None, assigned_at=None, last_followed=None, follow_count=0),
-        Lead(company_name="东莞联达塑胶制品有限公司", contact_name="孙经理", phone="13800138005",
-             email="sun@lianda-plastic.com", source="转介绍", country="中国", product_interest="卡航-欧洲",
-             status=STATUS_NEW, owner=None, assigned_at=None, last_followed=None, follow_count=0),
-        Lead(company_name="宁波远洋国际贸易有限公司", contact_name="周董", phone="13800138006",
-             email="zhou@yuanyang.com", source="展会", country="中国", product_interest="海派-整柜",
-             status=STATUS_CONTACTED, owner="张晓明", assigned_at=now(), last_followed=now(), follow_count=8),
-        Lead(company_name="AmazonSeller-DE GmbH", contact_name="Michael Braun", phone="+49-176-1234567",
-             email="m.braun@amzde.de", source="独立站", country="德国", product_interest="海派-FBA头程",
-             status=STATUS_NEW, owner=None, assigned_at=None, last_followed=None, follow_count=0),
-        Lead(company_name="同行-深圳快运通", contact_name="黄某", phone="13800138007",
-             email="huang@kyt.com", source="海关数据", country="中国", product_interest="海派-普货",
-             status=STATUS_DISQUALIFIED, owner="李强", assigned_at=now(),
-             last_followed=now() - datetime.timedelta(days=3), follow_count=2),
+        Lead(company_name="深圳思科达电子有限公司", contact_name="陈总",
+             contact_mobile="13800138001", phone="13800138001",
+             email="chen@scd-tech.cn", source="展会", country="中国",
+             target_market="美国", product_interest="海派-FBA头程",
+             logistics_type="FBA",
+             status=STATUS_CONTACTED, lead_status=LEAD_STATUS_PRIVATE,
+             owner="张晓明", owner_id=1, assigned_at=now(),
+             last_followed=now(), next_follow_at=now() + datetime.timedelta(days=3),
+             follow_count=5, reclaim_deadline=now() + datetime.timedelta(hours=72)),
+        Lead(company_name="广州恒通服装贸易有限公司", contact_name="李经理",
+             contact_mobile="13800138002", phone="13800138002",
+             email="li@htfashion.com", source="独立站", country="中国",
+             target_market="欧洲", product_interest="空派-快件",
+             logistics_type="空派",
+             status=STATUS_NEW, lead_status=LEAD_STATUS_PRIVATE,
+             owner="张晓明", owner_id=1, assigned_at=now(),
+             last_followed=now() - datetime.timedelta(days=8), follow_count=0,
+             auto_reclaim=True,
+             reclaim_deadline=now() - datetime.timedelta(hours=48)),
+        Lead(company_name="义乌欧凯进出口有限公司", contact_name="王芳",
+             contact_mobile="13800138003", phone="13800138003",
+             email="wangf@okexport.com", source="社媒", country="中国",
+             target_market="欧洲", product_interest="铁运-中欧班列",
+             logistics_type="海派",
+             status=STATUS_CONTACTED, lead_status=LEAD_STATUS_PRIVATE,
+             owner="李强", owner_id=2, assigned_at=now(),
+             last_followed=now(), next_follow_at=now() + datetime.timedelta(days=1),
+             follow_count=4, reclaim_deadline=now() + datetime.timedelta(hours=120)),
+        Lead(company_name="杭州锐思科技有限公司", contact_name="赵总",
+             contact_mobile="13800138004", phone="13800138004",
+             email="zhao@ruisi-tech.com", source="海关数据", country="中国",
+             target_market="日韩", product_interest="海派-重货",
+             logistics_type="海派",
+             status=STATUS_NEW, lead_status=LEAD_STATUS_PUBLIC,
+             owner=None, owner_id=None, assigned_at=None,
+             last_followed=None, follow_count=0, reclaim_deadline=None),
+        Lead(company_name="东莞联达塑胶制品有限公司", contact_name="孙经理",
+             contact_mobile="13800138005", phone="13800138005",
+             email="sun@lianda-plastic.com", source="转介绍", country="中国",
+             target_market="欧洲", product_interest="卡航-欧洲",
+             logistics_type="海派",
+             status=STATUS_NEW, lead_status=LEAD_STATUS_PUBLIC,
+             owner=None, owner_id=None, assigned_at=None,
+             last_followed=None, follow_count=0, reclaim_deadline=None),
+        Lead(company_name="宁波远洋国际贸易有限公司", contact_name="周董",
+             contact_mobile="13800138006", phone="13800138006",
+             email="zhou@yuanyang.com", source="展会", country="中国",
+             target_market="美国", product_interest="海派-整柜",
+             logistics_type="海派",
+             status=STATUS_CONTACTED, lead_status=LEAD_STATUS_PRIVATE,
+             owner="张晓明", owner_id=1, assigned_at=now(),
+             last_followed=now(), next_follow_at=now() + datetime.timedelta(days=2),
+             follow_count=8, reclaim_deadline=now() + datetime.timedelta(hours=96)),
+        Lead(company_name="AmazonSeller-DE GmbH", contact_name="Michael Braun",
+             contact_mobile="+49-176-1234567", phone="+49-176-1234567",
+             email="m.braun@amzde.de", source="独立站", country="德国",
+             target_market="欧洲", product_interest="海派-FBA头程",
+             logistics_type="FBA",
+             status=STATUS_NEW, lead_status=LEAD_STATUS_PUBLIC,
+             owner=None, owner_id=None, assigned_at=None,
+             last_followed=None, follow_count=0, reclaim_deadline=None),
+        Lead(company_name="同行-深圳快运通", contact_name="黄某",
+             contact_mobile="13800138007", phone="13800138007",
+             email="huang@kyt.com", source="海关数据", country="中国",
+             target_market="中东", product_interest="海派-普货",
+             logistics_type="一件代发",
+             status=STATUS_DISQUALIFIED, lead_status=LEAD_STATUS_CONVERTED,
+             owner="李强", owner_id=2, assigned_at=now(),
+             last_followed=now() - datetime.timedelta(days=3), follow_count=2,
+             reclaim_deadline=None, converted_at=now(), converted_to_type="customer"),
     ]
     db.add_all(leads)
     db.commit()
@@ -288,6 +333,26 @@ def seed():
                   status="resolved", resolution="已向客户说明不可抗力因素，客户表示理解"),
     ]
     db.add_all(complaints)
+    db.commit()
+
+    # ═══════════════════ 系统配置 (PRD: N/M/X/Y参数) ═══════════════════
+    configs = SystemConfig.get_all_defaults()
+    for key, (val, desc) in configs.items():
+        db.add(SystemConfig(key=key, value=val, description=desc))
+    db.commit()
+
+    # ═══════════════════ 线索跟进记录 (PRD: 3.3) ═══════════════════
+    follow_ups = [
+        FollowUp(lead_id=1, status="意向强烈", content="陈总确认Q3发货计划：每月5-8个方，带电产品需美森渠道，报价已发",
+                 next_follow_at=now() + datetime.timedelta(days=3), created_by="张晓明"),
+        FollowUp(lead_id=1, status="初步沟通", content="电话沟通，了解客户主营品类和出货节奏，初步建立联系",
+                 next_follow_at=now() - datetime.timedelta(days=3), created_by="张晓明"),
+        FollowUp(lead_id=3, status="意向强烈", content="王芳表示每月小商品约15-20个方，需要中欧班列+卡航组合方案",
+                 next_follow_at=now() + datetime.timedelta(days=1), created_by="李强"),
+        FollowUp(lead_id=6, status="初步沟通", content="周董初步沟通大型设备运输需求，关注鹿特丹DDP条款和清关能力",
+                 next_follow_at=now() + datetime.timedelta(days=2), created_by="张晓明"),
+    ]
+    db.add_all(follow_ups)
     db.commit()
 
     print("✅ 演示数据已填充完成！")
