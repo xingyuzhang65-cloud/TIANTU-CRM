@@ -1,42 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-/* ── 客户卡片专用样式 (PRD §4) ── */
+/* ── PRD V2.0 客户卡片样式 ── */
 .status-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:20px; }
 .status-tabs button { border-radius:20px; padding:6px 16px; font-size:12px; border:1px solid var(--border); background:#fff; color:var(--text-secondary); cursor:pointer; transition:all .2s; font-weight:500; }
 .status-tabs button:hover { border-color:var(--primary-light); color:var(--primary-light); }
 .status-tabs button.active { background:var(--primary-light); color:#fff; border-color:var(--primary-light); }
+.status-tabs button.warning-tab { border-color:#ef4444; color:#ef4444; position:relative; }
+.status-tabs button.warning-tab:hover { background:#fef2f2; }
+.status-tabs button.warning-tab.active { background:#ef4444; color:#fff; border-color:#ef4444; }
+.warning-badge { display:inline-block; background:#fff; color:#ef4444; border-radius:10px; padding:0 6px; font-size:11px; margin-left:4px; font-weight:700; }
 
-.customer-card { margin-bottom:16px; cursor:pointer; transition:box-shadow .2s; }
+.customer-card { margin-bottom:16px; cursor:pointer; transition:box-shadow .2s; border-left:3px solid transparent; }
 .customer-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.1); }
+.customer-card.warning { border-left-color:#ef4444; background:#fff5f5; }
 
 .card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .card-info { flex:1; min-width:0; }
 .card-name { font-size:15px; font-weight:600; color:var(--text); }
-.card-tags { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
+.card-tags { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; align-items:center; }
 
 .card-body { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:16px; padding:12px 0; }
 .card-section { }
 .card-section .label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
 .card-section .value { font-size:14px; font-weight:500; }
 
-.metric-value { cursor:pointer; position:relative; }
+.metric-value { cursor:pointer; position:relative; transition:color .15s; }
 .metric-value:hover { color:var(--primary-light); text-decoration:underline; }
 
-.trend-arrow { display:inline-block; font-size:14px; margin-left:4px; }
-.trend-up { color:var(--success); }
-.trend-down { color:var(--danger); }
+.trend-arrow { display:inline-block; font-size:14px; margin-left:4px; font-weight:700; }
+.trend-up { color:#10b981; }
+.trend-down { color:#ef4444; }
+.trend-mild { color:#f59e0b; }
 .trend-flat { color:var(--text-secondary); }
-
-.health-bar-wrap { display:flex; align-items:center; gap:8px; min-width:140px; }
-.health-bar { flex:1; height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden; }
-.health-bar-fill { height:100%; border-radius:5px; transition:width .3s, background .3s; }
 
 .freq-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
 .freq-tag.Daily { background:#dcfce7; color:#166534; }
 .freq-tag.Weekly { background:#dbeafe; color:#1e40af; }
 .freq-tag.Monthly { background:#fef3c7; color:#92400e; }
 .freq-tag.Inactive { background:#f1f5f9; color:#64748b; }
+
+.warning-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; background:#fee2e2; color:#dc2626; animation:pulse-warn 2s infinite; }
+@keyframes pulse-warn { 0%,100%{opacity:1} 50%{opacity:.6} }
 
 .status-dropdown-btn { padding:5px 14px; border-radius:12px; font-size:12px; border:none; cursor:pointer; font-weight:500; }
 .status-dropdown-btn.new, .status-dropdown-btn.contacted { background:#dbeafe; color:#1e40af; }
@@ -49,62 +54,82 @@
 .status-dropdown-btn.churned { background:#fee2e2; color:#991b1b; }
 .status-dropdown-btn.disqualified { background:#f1f5f9; color:#475569; }
 
-.order-drill-table { width:100%; font-size:12px; border-collapse:collapse; }
-.order-drill-table th { background:#f8fafc; padding:8px; text-align:left; border-bottom:1px solid var(--border); }
-.order-drill-table td { padding:8px; border-bottom:1px solid var(--border); }
+/* 6-month trend popup */
+.trend-popup { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.12); padding:12px 16px; z-index:50; min-width:260px; display:none; }
+.trend-popup.show { display:block; }
+.trend-bars { display:flex; align-items:flex-end; gap:6px; height:80px; margin-top:8px; }
+.trend-bar { flex:1; border-radius:3px 3px 0 0; position:relative; min-width:28px; transition:height .3s; }
+.trend-bar-label { font-size:10px; color:var(--text-secondary); text-align:center; margin-top:4px; }
+.trend-bar-val { font-size:10px; text-align:center; color:var(--text); }
 </style>
 
 <div class="flex-between mb-2">
-  <h1 style="font-size:22px;">👥 客户与商机管理</h1>
+  <h1 style="font-size:22px;">👥 客户与商机管理 <span style="font-size:13px;color:var(--text-secondary);font-weight:400;">PRD V2.0</span></h1>
   <div style="display:flex;gap:8px;">
     <input type="text" id="searchInput" placeholder="搜索客户名称/联系人..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;width:220px;"
       oninput="applyFilters()">
-    <button class="btn btn-outline btn-sm" onclick="triggerMetricsCalc()" title="手动计算全量客户指标">📊 计算指标</button>
   </div>
 </div>
 
-<!-- PRD §4: 顶部状态Tab导航 -->
+<!-- PRD V2: 顶部4阶段+预警Tab导航 -->
 <div class="status-tabs" id="statusTabs">
-  <button class="active" data-status="all" onclick="setStatusFilter('all', this)">全部</button>
-  {% for s in all_statuses %}
-  <button data-status="{{ s }}" onclick="setStatusFilter('{{ s }}', this)">{{ status_labels[s] }}</button>
+  <button class="active" data-stage="all" onclick="setStageFilter('all', this)">全部</button>
+  {% for s in all_stages %}
+  <button data-stage="{{ s }}" onclick="setStageFilter('{{ s }}', this)">{{ stage_labels[s] }}</button>
   {% endfor %}
+  <button class="warning-tab" data-stage="warning" onclick="setStageFilter('warning', this)">
+    ⚠️ 预警中
+    {% if warning_count > 0 %}<span class="warning-badge">{{ warning_count }}</span>{% endif %}
+  </button>
 </div>
 
 <!-- 客户卡片列表 -->
 <div id="customerList">
   {% for cd in customers %}
   {% set c = cd.obj %}
-  <div class="panel customer-card" data-status="{{ c.lifecycle_status }}"
+  <div class="panel customer-card {% if c.is_warning %}warning{% endif %}"
+       data-stage="{{ cd.stage }}"
+       data-warning="{{ 'true' if c.is_warning else 'false' }}"
        data-search="{{ c.company_name }} {{ c.contact_name or '' }} {{ c.main_category or '' }} {{ c.usual_routes or '' }}"
        data-cid="{{ c.id }}">
 
-    <!-- 卡片顶部: 公司名 + 等级 + 健康标签 + 状态按钮 -->
+    <!-- 卡片顶部 -->
     <div class="panel-header" onclick="location.href='/customer/{{ c.id }}'" style="cursor:pointer;">
       <div class="card-top">
         <div class="card-info">
           <span class="card-name">{{ c.company_name }}</span>
           <div class="card-tags">
             <span class="badge {% if c.customer_level=='A' %}badge-green{% elif c.customer_level=='B' %}badge-blue{% elif c.customer_level=='C' %}badge-yellow{% else %}badge-gray{% endif %}">{{ c.customer_level }}级</span>
-            <span class="badge" style="{% if cd.health_color=='green' %}background:#d1fae5;color:#065f46;{% elif cd.health_color=='orange' %}background:#fef3c7;color:#92400e;{% else %}background:#fee2e2;color:#991b1b;{% endif %}">
-              {{ cd.health_label }}
-            </span>
             {% if c.order_frequency_tag and c.order_frequency_tag != 'Inactive' %}
             <span class="freq-tag {{ c.order_frequency_tag }}">{{ c.order_frequency_tag }}</span>
             {% endif %}
+            {% if c.is_warning %}
+            <span class="warning-tag">⚠ 预警</span>
+            {% endif %}
+            <!-- V2 stage label -->
+            <span style="font-size:10px;color:var(--text-secondary);background:#f1f5f9;padding:2px 8px;border-radius:10px;">{{ cd.stage_label }}</span>
+            {% if c.owner %}
+            <span style="font-size:11px;color:var(--primary-light);" title="跟进人">👤 {{ c.owner }}</span>
+            {% endif %}
           </div>
         </div>
-        <button class="status-dropdown-btn {{ c.lifecycle_status }}" style="flex-shrink:0;"
-                onclick="event.stopPropagation();showStatusPicker({{ c.id }}, '{{ c.lifecycle_status }}')">
-          {{ status_labels.get(c.lifecycle_status, c.lifecycle_status) }} ▾
-        </button>
+        <div style="flex-shrink:0;display:flex;gap:6px;align-items:center;">
+          <button class="status-dropdown-btn {{ c.lifecycle_status }}"
+                  onclick="event.stopPropagation();showStatusPicker({{ c.id }}, '{{ c.lifecycle_status }}')">
+            {{ status_labels.get(c.lifecycle_status, c.lifecycle_status) }} ▾
+          </button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 10px;"
+                  onclick="event.stopPropagation();showQuickFollowUp({{ c.id }}, '{{ c.company_name }}')">
+            + 跟进
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- 卡片中部: 业务信息 + 数据看板 + 健康分 -->
+    <!-- 卡片中部: 业务信息 + 数据看板 -->
     <div class="panel-body" style="padding:12px 20px 16px;">
       <div class="card-body">
-        <!-- 业务信息 (PRD: 主营品类/发货频率/常走路线) -->
+        <!-- 业务信息 -->
         <div class="card-section">
           <div class="label">主营品类</div>
           <div class="value">{{ c.main_category or '-' }}</div>
@@ -118,15 +143,19 @@
           <div class="value" style="font-size:12px;">{{ c.usual_routes or '-' }}</div>
         </div>
 
-        <!-- 数据看板: 月均货量(MoM) + 月均营收 (PRD §4) -->
-        <div class="card-section">
+        <!-- 数据看板: 月均货量(MoM) + 月均营收 -->
+        <div class="card-section" style="position:relative;">
           <div class="label">月均货量</div>
-          <div class="value metric-value" onclick="event.stopPropagation();openOrderDrill({{ c.id }}, '{{ c.company_name }}')" title="点击查看最近运单">
-            {{ "%.1f"|format(c.avg_monthly_volume or 0) }}方
+          <div class="value metric-value" onclick="event.stopPropagation();openVolumeTrend({{ c.id }}, '{{ c.company_name }}')" title="点击查看近6个月货量走势">
+            <span style="{% if c.is_warning %}color:#ef4444;font-weight:700;{% elif cd.mom_trend == 'mild_down' %}color:#f59e0b;{% endif %}">
+              {{ "%.1f"|format(c.avg_monthly_volume or 0) }}方
+            </span>
             {% if cd.mom_trend == 'up' %}
             <span class="trend-arrow trend-up">▲{{ "%.0f"|format(cd.mom_value) }}%</span>
             {% elif cd.mom_trend == 'down' %}
             <span class="trend-arrow trend-down">▼{{ "%.0f"|format(cd.mom_value) }}%</span>
+            {% elif cd.mom_trend == 'mild_down' %}
+            <span class="trend-arrow trend-mild">▼{{ "%.0f"|format(cd.mom_value) }}%</span>
             {% else %}
             <span class="trend-arrow trend-flat">→</span>
             {% endif %}
@@ -137,20 +166,6 @@
           <div class="value" style="font-weight:700;font-size:16px;">¥{{ "{:,.0f}".format(c.avg_monthly_revenue or 0) }}</div>
         </div>
 
-        <!-- 健康分进度条 (PRD §4: 彩色进度条 + 分值) -->
-        <div class="health-bar-wrap" onclick="event.stopPropagation();openHealthDetail({{ c.id }}, '{{ c.company_name }}')" title="点击查看健康分明细" style="cursor:pointer;">
-          <div>
-            <div class="label" style="margin-bottom:2px;">健康分</div>
-            <div style="font-size:18px;font-weight:700;color:{% if cd.health_color=='green' %}var(--success){% elif cd.health_color=='orange' %}var(--warning){% else %}var(--danger){% endif %};">
-              {{ c.health_score }}
-            </div>
-          </div>
-          <div class="health-bar">
-            <div class="health-bar-fill" style="width:{{ c.health_score }}%;
-              background:{% if c.health_score >= 80 %}#10b981{% elif c.health_score >= 60 %}#f59e0b{% else %}#ef4444{% endif %};">
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -162,12 +177,12 @@
 
 <script>
 // ═══════════════════════════════════════════
-// 状态Tab过滤 (PRD §4)
+// PRD V2: 4阶段+预警 Tab过滤
 // ═══════════════════════════════════════════
-var currentStatus = 'all';
+var currentStage = 'all';
 
-function setStatusFilter(status, btn) {
-  currentStatus = status;
+function setStageFilter(stage, btn) {
+  currentStage = stage;
   document.querySelectorAll('#statusTabs button').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
   applyFilters();
@@ -178,13 +193,55 @@ function applyFilters() {
   var cards = document.querySelectorAll('.customer-card');
   cards.forEach(function(card) {
     var matchSearch = card.dataset.search.toLowerCase().indexOf(keyword) >= 0;
-    var matchStatus = currentStatus === 'all' || card.dataset.status === currentStatus;
-    card.style.display = (matchSearch && matchStatus) ? '' : 'none';
+    var matchStage;
+    if (currentStage === 'all') {
+      matchStage = true;
+    } else if (currentStage === 'warning') {
+      matchStage = card.dataset.warning === 'true';
+    } else {
+      matchStage = card.dataset.stage === currentStage;
+    }
+    card.style.display = (matchSearch && matchStage) ? '' : 'none';
   });
 }
 
 // ═══════════════════════════════════════════
-// 运单钻取弹窗 (PRD §4 数据穿透)
+// 6个月货量走势 (PRD V2 §5: 数据穿透)
+// ═══════════════════════════════════════════
+async function openVolumeTrend(cid, companyName) {
+  var r = await apiGet('/api/customers/' + cid + '/trend');
+  if (!r.ok) { showToast('加载失败', 'error'); return; }
+
+  var trend = r.trend;
+  var maxVol = Math.max.apply(null, trend.map(function(t){ return t.volume; })) || 1;
+
+  var html = '<h3>📈 ' + companyName + ' - 近6个月货量走势</h3>';
+  html += '<div style="margin-top:12px;">';
+  html += '<div class="trend-bars">';
+  trend.forEach(function(t, i) {
+    var h = Math.max(6, (t.volume / maxVol * 80));
+    var color = t.volume > 0 ? '#3b82f6' : '#e2e8f0';
+    // highlight current month
+    if (i === trend.length - 1) color = '#1d4ed8';
+    html += '<div style="flex:1;text-align:center;">'
+      + '<div style="font-size:10px;color:var(--text);font-weight:500;">' + (t.volume > 0 ? t.volume.toFixed(0) : '0') + '</div>'
+      + '<div style="height:' + h + 'px;background:' + color + ';border-radius:3px 3px 0 0;margin:0 auto;width:70%;min-width:24px;"></div>'
+      + '<div style="font-size:10px;color:var(--text-secondary);margin-top:4px;">' + t.label + '</div>'
+      + '</div>';
+  });
+  html += '</div>';
+  // Summary line
+  html += '<div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--text-secondary);">';
+  html += '<span>总计: <strong>' + trend.reduce(function(s,t){return s+t.volume;},0).toFixed(1) + ' kg</strong></span>';
+  html += '<span>月均: <strong>' + (trend.reduce(function(s,t){return s+t.volume;},0)/trend.length).toFixed(1) + ' kg</strong></span>';
+  html += '</div></div>';
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+
+  openModal(html);
+}
+
+// ═══════════════════════════════════════════
+// 运单钻取弹窗
 // ═══════════════════════════════════════════
 async function openOrderDrill(cid, companyName) {
   openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
@@ -217,152 +274,74 @@ async function openOrderDrill(cid, companyName) {
 }
 
 // ═══════════════════════════════════════════
-// 健康分明细弹窗 (PRD §3.3)
+// PRD V2: 4阶段状态流转
 // ═══════════════════════════════════════════
-async function openHealthDetail(cid, companyName) {
-  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
-  var r = await apiGet('/api/customers/' + cid + '/metrics');
-  if (!r.ok) { showToast('加载失败', 'error'); closeModal(); return; }
-  var m = r.metrics;
-
-  var html = '<h3>📊 ' + companyName + ' - 健康分明细</h3>';
-  html += '<p style="font-size:24px;font-weight:700;margin:12px 0;text-align:center;'
-    + 'color:' + (m.health_score >= 80 ? 'var(--success)' : m.health_score >= 60 ? 'var(--warning)' : 'var(--danger)') + ';">'
-    + m.health_score + ' 分</p>';
-
-  // 健康分进度条
-  html += '<div style="height:16px;background:#e2e8f0;border-radius:8px;overflow:hidden;margin:12px 0;">'
-    + '<div style="height:100%;width:' + m.health_score + '%;border-radius:8px;background:'
-    + (m.health_score >= 80 ? '#10b981' : m.health_score >= 60 ? '#f59e0b' : '#ef4444') + ';"></div></div>';
-
-  // 分项得分
-  var hb = m.health_breakdown || {};
-  var items = [
-    {label: '发货稳定性', score: hb.stability || 0, max: 40, desc: '货量MoM在±10%内满分，每下降5%扣2分'},
-    {label: '跟进活跃度', score: hb.follow_activity || 0, max: 30, desc: '近7天有效跟进满分，7-15天15分'},
-    {label: '运单活跃度', score: hb.order_activity || 0, max: 30, desc: '近30天有运单满分，30-60天15分'},
-  ];
-  html += '<div style="margin:16px 0;">';
-  items.forEach(function(item) {
-    var pct = item.max > 0 ? (item.score / item.max * 100) : 0;
-    var barColor = pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
-    html += '<div style="margin-bottom:12px;">'
-      + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">'
-      + '<span>' + item.label + '</span>'
-      + '<span style="font-weight:600;">' + item.score + ' / ' + item.max + '</span></div>'
-      + '<div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
-      + '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:4px;"></div></div>'
-      + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">' + item.desc + '</div></div>';
-  });
-  html += '</div>';
-
-  // 其他指标
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;padding:12px;background:#f8fafc;border-radius:8px;">'
-    + '<div><span style="color:var(--text-secondary);">货量MoM:</span> <strong>' + (m.volume_mom != null ? (m.volume_mom >= 0 ? '+' : '') + m.volume_mom + '%' : '-') + '</strong></div>'
-    + '<div><span style="color:var(--text-secondary);">货量YoY:</span> <strong>' + (m.volume_yoy != null ? (m.volume_yoy >= 0 ? '+' : '') + m.volume_yoy + '%' : '-') + '</strong></div>'
-    + '<div><span style="color:var(--text-secondary);">近30天运单:</span> <strong>' + (m.monthly_order_count || 0) + '票</strong></div>'
-    + '<div><span style="color:var(--text-secondary);">下单频率:</span> <strong class="freq-tag ' + (m.order_frequency_tag || 'Inactive') + '">' + (m.order_frequency_tag || 'Inactive') + '</strong></div>'
-    + '<div><span style="color:var(--text-secondary);">月均货量:</span> <strong>' + (m.avg_monthly_volume || 0) + '方</strong></div>'
-    + '<div><span style="color:var(--text-secondary);">月均营收:</span> <strong>¥' + ((m.avg_monthly_revenue || 0)).toLocaleString() + '</strong></div>'
-    + '<div style="grid-column:1/-1;"><span style="color:var(--text-secondary);">计算时间:</span> ' + (m.last_calc_at || '未计算') + '</div>'
-    + '</div>';
-
-  html += '<div class="modal-actions><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
-  document.getElementById('modalContent').innerHTML = html;
-}
-
-// ═══════════════════════════════════════════
-// 状态流转 (复用原有逻辑)
-// ═══════════════════════════════════════════
-var allStatuses = {{ all_statuses | tojson }};
-var statusLabels = {{ status_labels | tojson }};
-var requirements = {{ requirements | tojson }};
+var allStages = {{ all_stages | tojson }};
+var stageLabels = {{ stage_labels | tojson }};
+var stageToDefault = {{ stage_to_default | tojson }};
 
 function showStatusPicker(cid, currentStatus) {
-  var html = '<h3>编辑客户状态</h3>';
-  html += '<p style="margin-bottom:12px;"><span class="text-muted">当前:</span> <strong>' + (statusLabels[currentStatus] || currentStatus) + '</strong></p>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
-  for (var i = 0; i < allStatuses.length; i++) {
-    var s = allStatuses[i];
-    var isCurrent = s === currentStatus;
-    html += '<button class="btn ' + (isCurrent ? 'btn-primary' : 'btn-outline') + '"';
-    html += ' onclick="pickStatus(' + cid + ', \'' + s + '\')">' + (statusLabels[s] || s) + '</button>';
+  var html = '<h3>编辑客户状态 (PRD V2)</h3>';
+  html += '<p style="margin-bottom:4px;font-size:13px;color:var(--text-secondary);">选择目标阶段，系统自动映射为底层状态</p>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">';
+  for (var i = 0; i < allStages.length; i++) {
+    var s = allStages[i];
+    var label = stageLabels[s] || s;
+    var activeClass = ({{ status_to_stage | tojson }}[currentStatus] || '') === s ? 'btn-primary' : 'btn-outline';
+    html += '<button class="btn ' + activeClass + '" style="padding:12px;font-size:14px;"';
+    html += ' onclick="pickStage(' + cid + ', \'' + s + '\')">' + label + '</button>';
   }
   html += '</div>';
   openModal(html);
 }
 
-function pickStatus(cid, toStatus) {
+function pickStage(cid, stage) {
   closeModal();
-  var reqs = requirements[toStatus] || [];
-  if (reqs.length > 0) {
-    showTransitionForm(cid, toStatus, reqs);
-  } else {
-    doTransitionSimple(cid, toStatus);
-  }
+  // 4阶段无需必填项校验，直接流转
+  var params = new URLSearchParams();
+  params.set('to_status', stage);
+  params.set('operator', '张晓明');
+  apiPost('/api/customer/' + cid + '/transition?' + params.toString()).then(function(r) {
+    if (r.ok) { showToast(r.msg); setTimeout(function() { location.reload(); }, 800); }
+    else showToast(r.msg, 'error');
+  });
 }
 
-function showTransitionForm(cid, toStatus, reqs) {
-  var extraFields = '';
-  if (reqs.indexOf('quotation_id') >= 0) {
-    extraFields += '<label>关联报价单ID <span style="color:var(--danger)">*必填</span></label><input type="number" id="tf_quotation_id" placeholder="输入已创建的报价单编号" required>';
-  }
-  if (reqs.indexOf('negotiation_notes') >= 0) {
-    extraFields += '<label>谈判纪要 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_negotiation_notes" placeholder="记录谈判要点" required></textarea>';
-  }
-  if (reqs.indexOf('order_count') >= 0) {
-    extraFields += '<label>试单票数 <span style="color:var(--danger)">*必填</span></label><input type="number" id="tf_order_count" placeholder="计划试单票数" required>';
-  }
-  if (reqs.indexOf('churn_reason') >= 0) {
-    extraFields += '<label>流失原因 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_churn_reason" placeholder="具体流失原因" required></textarea>';
-  }
-  if (reqs.indexOf('disqualify_reason') >= 0) {
-    extraFields += '<label>无效原因 <span style="color:var(--danger)">*必填</span></label><textarea id="tf_disqualify_reason" placeholder="具体无效原因" required></textarea>';
-  }
-  extraFields += '<label>备注 <span class="text-muted">(选填)</span></label><textarea id="tf_remark" placeholder="补充说明..."></textarea>';
-
-  var html = '<h3>🔄 状态编辑</h3>';
-  html += '<p style="margin-bottom:12px;">目标: <strong style="color:var(--primary-light);">' + (statusLabels[toStatus] || toStatus) + '</strong></p>';
-  html += extraFields;
-  html += '<div style="margin-top:12px;">';
-  html += '<button class="btn btn-outline" onclick="closeModal()">取消</button> ';
-  html += '<button class="btn btn-primary" onclick="doTransition(' + cid + ', \'' + toStatus + '\')">确认</button>';
-  html += '</div>';
+// ═══════════════════════════════════════════
+// 快速跟进记录
+// ═══════════════════════════════════════════
+function showQuickFollowUp(cid, companyName) {
+  var html = '<h3>📝 跟进记录 - ' + companyName + '</h3>';
+  html += '<select id="fuActType" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;">'
+    + '<option value="call">📞 电话</option>'
+    + '<option value="meeting">🤝 会议</option>'
+    + '<option value="email">📧 邮件</option>'
+    + '<option value="visit">🏢 拜访</option>'
+    + '</select>';
+  html += '<textarea id="fuContent" rows="4" placeholder="跟进内容描述..." style="width:100%;margin-bottom:12px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical;"></textarea>';
+  html += '<div class="modal-actions">'
+    + '<button class="btn btn-outline" onclick="closeModal()">取消</button>'
+    + '<button class="btn btn-primary" onclick="doQuickFollowUp(' + cid + ')">保存跟进</button>'
+    + '</div>';
   openModal(html);
 }
 
-async function doTransitionSimple(cid, toStatus) {
+async function doQuickFollowUp(cid) {
+  var content = document.getElementById('fuContent').value.trim();
+  if (!content) return showToast('请输入跟进内容', 'error');
+  var actType = document.getElementById('fuActType').value;
   var params = new URLSearchParams();
-  params.set('to_status', toStatus);
-  params.set('operator', '张晓明');
-  var r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
-  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 800); }
-  else showToast(r.msg, 'error');
+  params.set('activity_type', actType);
+  params.set('content', content);
+  params.set('created_by', '张晓明');
+  var r = await fetch('/api/customer/' + cid + '/add-activity?' + params.toString(), {method:'POST'}).then(function(res){return res.json();});
+  if (r.ok) {
+    showToast('跟进记录已保存');
+    closeModal();
+  } else {
+    showToast(r.msg, 'error');
+  }
 }
 
-async function doTransition(cid, toStatus) {
-  var params = new URLSearchParams();
-  params.set('to_status', toStatus);
-  params.set('operator', '张晓明');
-  var el;
-  el = document.getElementById('tf_quotation_id'); if (el) params.set('quotation_id', el.value);
-  el = document.getElementById('tf_negotiation_notes'); if (el) params.set('negotiation_notes', el.value);
-  el = document.getElementById('tf_order_count'); if (el) params.set('order_count', el.value);
-  el = document.getElementById('tf_churn_reason'); if (el) params.set('churn_reason', el.value);
-  el = document.getElementById('tf_disqualify_reason'); if (el) params.set('disqualify_reason', el.value);
-  el = document.getElementById('tf_remark'); if (el && el.value.trim()) params.set('remark', el.value.trim());
-  var r = await apiPost('/api/customer/' + cid + '/transition?' + params.toString());
-  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 800); }
-  else showToast(r.msg, 'error');
-}
-
-// ═══════════════════════════════════════════
-// 手动触发指标计算
-// ═══════════════════════════════════════════
-async function triggerMetricsCalc() {
-  var r = await apiPost('/api/customers/metrics/calculate');
-  showToast(r.msg);
-  setTimeout(function() { location.reload(); }, 1500);
-}
 </script>
 {% endblock %}

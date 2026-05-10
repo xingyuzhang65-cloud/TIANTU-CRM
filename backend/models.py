@@ -10,21 +10,17 @@ def _now():
     return datetime.datetime.now()
 
 
-# ── 客户生命周期状态常量 ──
-# 一、潜客线索阶段
-STATUS_NEW = "new"               # 1. 待处理
-STATUS_CONTACTED = "contacted"   # 2. 跟进中
-STATUS_DISQUALIFIED = "disqualified"  # 3. 无效/关闭
-# 二、商机转化阶段
-STATUS_NURTURING = "nurturing"   # 4. 意向客户
-STATUS_QUOTED = "quoted"         # 5. 已报价
-STATUS_NEGOTIATING = "negotiating"  # 6. 商务谈判
-STATUS_TRIAL = "trial"           # 7. 试单中
-# 三、成交与存量阶段
-STATUS_ACTIVE = "active"         # 8. 正式合作
-STATUS_RECEDING = "receding"     # 9. 减量/休眠
-# 四、结束状态
-STATUS_CHURNED = "churned"       # 10. 已流失
+# ── 客户生命周期状态常量 (V1 — 保留向前兼容) ──
+STATUS_NEW = "new"
+STATUS_CONTACTED = "contacted"
+STATUS_DISQUALIFIED = "disqualified"
+STATUS_NURTURING = "nurturing"
+STATUS_QUOTED = "quoted"
+STATUS_NEGOTIATING = "negotiating"
+STATUS_TRIAL = "trial"
+STATUS_ACTIVE = "active"
+STATUS_RECEDING = "receding"
+STATUS_CHURNED = "churned"
 
 ALL_STATUSES = [
     STATUS_NEW, STATUS_CONTACTED, STATUS_DISQUALIFIED,
@@ -33,29 +29,63 @@ ALL_STATUSES = [
 ]
 
 STATUS_LABELS = {
-    STATUS_NEW: "待处理",
-    STATUS_CONTACTED: "跟进中",
-    STATUS_DISQUALIFIED: "无效/关闭",
-    STATUS_NURTURING: "意向客户",
-    STATUS_QUOTED: "已报价",
-    STATUS_NEGOTIATING: "商务谈判",
-    STATUS_TRIAL: "试单中",
-    STATUS_ACTIVE: "正式合作",
-    STATUS_RECEDING: "减量/休眠",
+    STATUS_NEW: "待处理", STATUS_CONTACTED: "跟进中", STATUS_DISQUALIFIED: "无效/关闭",
+    STATUS_NURTURING: "意向客户", STATUS_QUOTED: "已报价", STATUS_NEGOTIATING: "商务谈判",
+    STATUS_TRIAL: "试单中", STATUS_ACTIVE: "正式合作", STATUS_RECEDING: "减量/休眠",
     STATUS_CHURNED: "已流失",
 }
 
 STATUS_STAGE = {
-    STATUS_NEW: "潜客线索",
-    STATUS_CONTACTED: "潜客线索",
-    STATUS_DISQUALIFIED: "潜客线索",
-    STATUS_NURTURING: "商机转化",
-    STATUS_QUOTED: "商机转化",
-    STATUS_NEGOTIATING: "商机转化",
-    STATUS_TRIAL: "商机转化",
-    STATUS_ACTIVE: "成交存量",
-    STATUS_RECEDING: "成交存量",
+    STATUS_NEW: "潜客线索", STATUS_CONTACTED: "潜客线索", STATUS_DISQUALIFIED: "潜客线索",
+    STATUS_NURTURING: "商机转化", STATUS_QUOTED: "商机转化", STATUS_NEGOTIATING: "商机转化",
+    STATUS_TRIAL: "商机转化", STATUS_ACTIVE: "成交存量", STATUS_RECEDING: "成交存量",
     STATUS_CHURNED: "结束",
+}
+
+# ── PRD V2.0: 精简4阶段生命周期 ──
+STAGE_DEVELOPING = "developing"
+STAGE_NEGOTIATING = "negotiating"
+STAGE_COOPERATING = "cooperating"
+STAGE_ARCHIVED = "archived"
+
+ALL_STAGES = [STAGE_DEVELOPING, STAGE_NEGOTIATING, STAGE_COOPERATING, STAGE_ARCHIVED]
+
+STAGE_LABELS = {
+    STAGE_DEVELOPING: "开发中",
+    STAGE_NEGOTIATING: "报价谈判",
+    STAGE_COOPERATING: "合作中",
+    STAGE_ARCHIVED: "已归档",
+}
+
+# 旧状态 → 新4阶段映射
+STATUS_TO_STAGE = {
+    STATUS_NEW: STAGE_DEVELOPING, STATUS_CONTACTED: STAGE_DEVELOPING,
+    STATUS_NURTURING: STAGE_NEGOTIATING, STATUS_QUOTED: STAGE_NEGOTIATING,
+    STATUS_NEGOTIATING: STAGE_NEGOTIATING,
+    STATUS_TRIAL: STAGE_COOPERATING, STATUS_ACTIVE: STAGE_COOPERATING,
+    STATUS_RECEDING: STAGE_COOPERATING,
+    STATUS_DISQUALIFIED: STAGE_ARCHIVED, STATUS_CHURNED: STAGE_ARCHIVED,
+}
+
+# 新阶段 → 包含的旧状态列表
+STAGE_STATUS_MAP = {
+    STAGE_DEVELOPING: [STATUS_NEW, STATUS_CONTACTED],
+    STAGE_NEGOTIATING: [STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING],
+    STAGE_COOPERATING: [STATUS_TRIAL, STATUS_ACTIVE, STATUS_RECEDING],
+    STAGE_ARCHIVED: [STATUS_DISQUALIFIED, STATUS_CHURNED],
+}
+
+# "合作中" 自动激活规则: 近90天有生效运单
+COOPERATING_AUTO_DAYS = 90
+# 预警阈值: 货量MoM跌幅超过20%
+WARNING_MOM_THRESHOLD = -20
+
+# 新阶段 → 默认旧状态 (手动切换时使用)
+STAGE_TO_DEFAULT_STATUS = {
+    STAGE_DEVELOPING: STATUS_CONTACTED,
+    STAGE_NEGOTIATING: STATUS_QUOTED,
+    STAGE_COOPERATING: STATUS_ACTIVE,
+    STAGE_ARCHIVED: STATUS_DISQUALIFIED,
 }
 
 # 状态流转规则: 当前状态 → 可流转到的下一个状态列表
@@ -214,6 +244,10 @@ class Customer(Base):
     prev_year_volume = Column(Float, comment="去年同期货量")
     order_frequency_tag = Column(String(20), comment="下单频率: Daily/Weekly/Monthly/Inactive")
     health_breakdown = Column(Text, comment="健康分明细 JSON: {stability, follow_activity, order_activity}")
+    owner = Column(String(100), comment="跟进人/负责人 (从线索认领同步)")
+    owner_id = Column(Integer, comment="跟进人ID")
+    is_warning = Column(Boolean, default=False, index=True,
+                        comment="PRD V2: 智能预警标记 (MoM货量跌幅>20%自动触发)")
     last_metrics_calc_at = Column(DateTime, comment="最近指标计算时间")
     created_at = Column(DateTime, default=_now)
     opportunities = relationship("Opportunity", back_populates="customer", cascade="all, delete-orphan")

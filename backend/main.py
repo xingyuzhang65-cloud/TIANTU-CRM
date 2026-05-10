@@ -5,9 +5,11 @@ import datetime
 import json
 import random
 import asyncio
+from typing import Dict as DictType, Any
 from collections import defaultdict
 
 from fastapi import FastAPI, Request, Depends, Query, Body
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -23,8 +25,12 @@ from models import (
     STATUS_NEW,
     LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
     LEAD_STATUS_LABELS, LOGISTICS_TYPES, TARGET_MARKETS, FOLLOW_STATUSES,
+    ALL_STAGES, STAGE_LABELS, STAGE_STATUS_MAP, STATUS_TO_STAGE,
+    STAGE_DEVELOPING, STAGE_NEGOTIATING, STAGE_COOPERATING, STAGE_ARCHIVED,
+    STAGE_TO_DEFAULT_STATUS,
+    COOPERATING_AUTO_DAYS, WARNING_MOM_THRESHOLD,
 )
-from metrics_engine import calc_metrics
+from metrics_engine import calc_metrics, get_6month_trend
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -32,7 +38,49 @@ app = FastAPI(title="跨境物流 CRM 系统", version="1.0")
 
 app.mount("/static", StaticFiles(directory=os.path.join(_BASE_DIR, "static")), name="static")
 jinja_env = Environment(loader=FileSystemLoader(os.path.join(_BASE_DIR, "templates")),
-                          extensions=["jinja2.ext.loopcontrols"])
+                          extensions=["jinja2.ext.loopcontrols"],
+                          auto_reload=True)
+
+
+# ── Pydantic request schemas ──
+class ClaimData(BaseModel):
+    user_id: int = 1
+    user_name: str = "张晓明"
+
+class FollowUpData(BaseModel):
+    status: str = "初步沟通"
+    content: str = ""
+    image_urls: str = ""
+    next_follow_at: str = ""
+    created_by: str = ""
+
+class ConvertData(BaseModel):
+    convert_type: str = "customer"
+    customer_id: int = 0
+    opportunity_name: str = ""
+    amount: float = 0.0
+    expected_close_date: str = ""
+    notes: str = ""
+    operator: str = ""
+
+class LeadCreateData(BaseModel):
+    company_name: str = ""
+    contact_name: str = ""
+    contact_mobile: str = ""
+    phone: str = ""
+    email: str = ""
+    source: str = ""
+    country: str = ""
+    target_market: str = ""
+    logistics_type: str = ""
+    product_interest: str = ""
+
+class BatchIdsData(BaseModel):
+    ids: list = []
+
+class ReassignData(BaseModel):
+    user_name: str = ""
+    user_id: int = 0
 
 
 def render(name: str, request: Request, **kwargs):
@@ -227,54 +275,47 @@ def page_leads(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/customers", response_class=HTMLResponse)
 def page_customers(request: Request, db: Session = Depends(get_db)):
-    """客户画像与商机 (PRD v1.0 卡片式布局)"""
+    """客户画像与商机 (PRD V2.0 卡片式布局)"""
     customers = db.query(Customer).order_by(desc(Customer.avg_monthly_revenue)).all()
     now = _now()
 
-    # 为每个客户构建完整的指标数据
+    # 为每个客户构建完整的指标数据 + V2 stage映射
     customer_data = []
+    warning_count = 0
     for c in customers:
-        # 解析健康分明细
-        hb = {}
-        if c.health_breakdown:
-            try:
-                hb = json.loads(c.health_breakdown)
-            except:
-                pass
-
-        # 健康色
-        if c.health_score >= 80:
-            health_color = "green"
-            health_label = "健康"
-        elif c.health_score >= 60:
-            health_color = "orange"
-            health_label = "关注"
-        else:
-            health_color = "red"
-            health_label = "高危"
-
-        # MoM趋势箭头
+        # MoM趋势 (PRD V2: -20%阈值对比 >20%红色预警, 0-20%黄色, 上升绿色)
         mom = c.volume_mom or 0
         if mom > 5:
             mom_trend = "up"
-        elif mom < -5:
+        elif mom < WARNING_MOM_THRESHOLD:
             mom_trend = "down"
+        elif mom < 0:
+            mom_trend = "mild_down"
         else:
             mom_trend = "flat"
 
+        # V2 4阶段映射
+        stage = STATUS_TO_STAGE.get(c.lifecycle_status, STAGE_DEVELOPING)
+
+        if c.is_warning:
+            warning_count += 1
+
         customer_data.append({
             "obj": c,
-            "health_color": health_color,
-            "health_label": health_label,
             "mom_trend": mom_trend,
             "mom_value": abs(mom),
-            "health_breakdown": hb,
+            "stage": stage,
+            "stage_label": STAGE_LABELS.get(stage, stage),
         })
 
     return render("customers.html", request, active_page="customers",
                   customers=customer_data, all_statuses=ALL_STATUSES,
                   status_labels=STATUS_LABELS,
-                  requirements=TRANSITION_REQUIREMENTS)
+                  requirements=TRANSITION_REQUIREMENTS,
+                  all_stages=ALL_STAGES, stage_labels=STAGE_LABELS,
+                  stage_status_map=STAGE_STATUS_MAP, status_to_stage=STATUS_TO_STAGE,
+                  stage_to_default=STAGE_TO_DEFAULT_STATUS,
+                  warning_count=warning_count, warning_threshold=abs(WARNING_MOM_THRESHOLD))
 
 
 @app.get("/quotation", response_class=HTMLResponse)
@@ -344,27 +385,20 @@ def page_customer_detail(cid: int, request: Request, db: Session = Depends(get_d
         if lead:
             lead_info = lead
 
-    # 健康分明细
-    hb = {}
-    if cust.health_breakdown:
-        try: hb = json.loads(cust.health_breakdown)
-        except: pass
-
-    # 健康色
-    if cust.health_score >= 80:
-        health_color = "green"
-    elif cust.health_score >= 60:
-        health_color = "orange"
-    else:
-        health_color = "red"
+    # V2 阶段映射
+    stage = STATUS_TO_STAGE.get(cust.lifecycle_status, STAGE_DEVELOPING)
 
     return render("customer_detail.html", request, active_page="customers",
                   customer=cust, quotes=quotes, orders=orders, activities=activities,
                   credit=credit, opportunities=opps,
-                  lead_info=lead_info, health_breakdown=hb, health_color=health_color,
+                  lead_info=lead_info,
                   current_status_label=STATUS_LABELS.get(current, current),
                   all_statuses=ALL_STATUSES, status_labels=STATUS_LABELS,
-                  requirements=TRANSITION_REQUIREMENTS)
+                  requirements=TRANSITION_REQUIREMENTS,
+                  stage=stage, stage_label=STAGE_LABELS.get(stage, stage),
+                  status_to_stage=STATUS_TO_STAGE, stage_labels=STAGE_LABELS,
+                  all_stages=ALL_STAGES, stage_to_default=STAGE_TO_DEFAULT_STATUS,
+                  warning_threshold=abs(WARNING_MOM_THRESHOLD))
 
 
 # ═══════════════════════════════════════════════
@@ -386,11 +420,15 @@ def transition_customer(cid: int, to_status: str = Query(...),
     if not cust:
         return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
     current = cust.lifecycle_status
-    # 校验目标状态是否为有效的10个状态之一
-    if to_status not in ALL_STATUSES:
+    # 支持 PRD V2 4阶段名称: 自动映射为底层状态
+    if to_status in ALL_STAGES:
+        actual_status = STAGE_TO_DEFAULT_STATUS.get(to_status, to_status)
+    elif to_status in ALL_STATUSES:
+        actual_status = to_status
+    else:
         return JSONResponse({"ok": False, "msg": f"无效的状态: {to_status}"}, 400)
     # 流转时的强校验（特定状态需要填写必填项）
-    reqs = TRANSITION_REQUIREMENTS.get(to_status, [])
+    reqs = TRANSITION_REQUIREMENTS.get(actual_status, [])
     for req in reqs:
         if req == "quotation_id" and not quotation_id:
             return JSONResponse({"ok": False, "msg": "流转到「已报价」必须关联报价单ID"}, 400)
@@ -404,11 +442,11 @@ def transition_customer(cid: int, to_status: str = Query(...),
             return JSONResponse({"ok": False, "msg": "流转到「无效/关闭」必须填写无效原因"}, 400)
     # 3. 执行流转
     old_status = current
-    cust.lifecycle_status = to_status
+    cust.lifecycle_status = actual_status
     cust.status_changed_at = _now()
     cust.status_changed_by = operator
     # 流转到新线索时回流公海池
-    if to_status == STATUS_NEW:
+    if actual_status == STATUS_NEW:
         if cust.lead_id:
             lead = db.query(Lead).filter(Lead.id == cust.lead_id).first()
             if lead:
@@ -433,9 +471,9 @@ def transition_customer(cid: int, to_status: str = Query(...),
     log = ActivityLog(
         customer_id=cid,
         activity_type="status_change",
-        content=f"{STATUS_LABELS.get(old_status, old_status)} → {STATUS_LABELS.get(to_status, to_status)}{extra_str}",
+        content=f"{STATUS_LABELS.get(old_status, old_status)} → {STATUS_LABELS.get(actual_status, actual_status)}{extra_str}",
         status_from=old_status,
-        status_to=to_status,
+        status_to=actual_status,
         created_by=operator,
     )
     db.add(log)
@@ -444,9 +482,9 @@ def transition_customer(cid: int, to_status: str = Query(...),
         "ok": True,
         "from": old_status,
         "from_label": STATUS_LABELS.get(old_status, old_status),
-        "to": to_status,
-        "to_label": STATUS_LABELS.get(to_status, to_status),
-        "msg": f"状态已更新: {STATUS_LABELS.get(old_status, '')} → {STATUS_LABELS.get(to_status, '')}"
+        "to": actual_status,
+        "to_label": STATUS_LABELS.get(actual_status, actual_status),
+        "msg": f"状态已更新: {STATUS_LABELS.get(old_status, '')} → {STATUS_LABELS.get(actual_status, '')}"
     }
 
 
@@ -456,16 +494,51 @@ def transition_customer(cid: int, to_status: str = Query(...),
 
 @app.post("/api/leads/claim")
 def claim_lead(lead_id: int = Query(...), owner: str = Query("张晓明"), db: Session = Depends(get_db)):
-    """认领线索"""
+    """认领线索 — 自动进入客户与商机"""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
     lead.owner = owner
+    lead.lead_status = LEAD_STATUS_PRIVATE
     lead.status = "contacted"
     lead.assigned_at = _now()
     lead.last_followed = _now()
+    n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
+    lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
+
+    # ── 自动创建客户（进入客户与商机页面）──
+    existing = db.query(Customer).filter(
+        (Customer.lead_id == lead_id) |
+        ((Customer.company_name == lead.company_name) & (Customer.phone == lead.contact_mobile))
+    ).first()
+    if not existing:
+        customer = Customer(
+            lead_id=lead.id,
+            company_name=lead.company_name,
+            contact_name=lead.contact_name,
+            phone=lead.contact_mobile,
+            email=lead.email,
+            country=lead.country or lead.target_market,
+            main_category=lead.product_interest or "",
+            lifecycle_status=STATUS_NEW,
+            status_changed_at=_now(),
+            status_changed_by=owner,
+            owner=owner,
+        )
+        db.add(customer)
+        db.flush()
+        db.add(ActivityLog(
+            lead_id=lead_id, customer_id=customer.id,
+            activity_type="status_change",
+            content=f"线索由{owner}认领，自动进入客户管理-开发中阶段",
+            status_from=None, status_to=STATUS_NEW,
+            created_by=owner,
+        ))
+    else:
+        existing.owner = owner
+
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "msg": f"认领成功，已同步至客户与商机"}
 
 
 @app.post("/api/leads/transfer")
@@ -608,10 +681,10 @@ def api_lead_detail(lead_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/leads/create")
-def api_lead_create(data: dict = Body(), db: Session = Depends(get_db)):
+def api_lead_create(data: LeadCreateData, db: Session = Depends(get_db)):
     """创建线索 (PRD 3.1): 含强制查重逻辑"""
-    company_name = (data.get("company_name") or "").strip()
-    contact_mobile = (data.get("contact_mobile") or "").strip()
+    company_name = (data.company_name or "").strip()
+    contact_mobile = (data.contact_mobile or "").strip()
     if not company_name or not contact_mobile:
         return JSONResponse({"ok": False, "msg": "公司名称和手机号为必填项"}, 400)
 
@@ -650,15 +723,15 @@ def api_lead_create(data: dict = Body(), db: Session = Depends(get_db)):
 
     lead = Lead(
         company_name=company_name,
-        contact_name=data.get("contact_name", ""),
+        contact_name=data.contact_name or "",
         contact_mobile=contact_mobile,
-        phone=data.get("phone", contact_mobile),
-        email=data.get("email", ""),
-        source=data.get("source", ""),
-        country=data.get("country", ""),
-        target_market=data.get("target_market", ""),
-        logistics_type=data.get("logistics_type", ""),
-        product_interest=data.get("product_interest", ""),
+        phone=data.phone or contact_mobile,
+        email=data.email or "",
+        source=data.source or "",
+        country=data.country or "",
+        target_market=data.target_market or "",
+        logistics_type=data.logistics_type or "",
+        product_interest=data.product_interest or "",
         lead_status=LEAD_STATUS_PUBLIC,
         status=STATUS_NEW,
     )
@@ -670,11 +743,11 @@ def api_lead_create(data: dict = Body(), db: Session = Depends(get_db)):
 
 @app.post("/api/leads/{lead_id}/claim")
 def api_lead_claim(
-    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+    lead_id: int, data: ClaimData, db: Session = Depends(get_db)
 ):
     """认领线索 (PRD 3.2): 含每日上限和私海总量限制"""
-    user_id = data.get("user_id", 1)
-    user_name = data.get("user_name", "张晓明")
+    user_id = data.user_id
+    user_name = data.user_name
 
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
@@ -682,7 +755,6 @@ def api_lead_claim(
     if lead.lead_status != LEAD_STATUS_PUBLIC:
         return JSONResponse({"ok": False, "msg": "该线索不在公海，无法认领"}, 400)
 
-    # X: 每日认领上限
     today = _date()
     today_claims = db.query(ClaimRecord).filter(
         ClaimRecord.user_id == user_id,
@@ -692,7 +764,6 @@ def api_lead_claim(
     if today_claims >= daily_limit:
         return JSONResponse({"ok": False, "msg": f"今日认领已达上限({daily_limit}条)，请明天再试"}, 400)
 
-    # Y: 私海持有上限
     private_count = db.query(Lead).filter(
         Lead.owner_id == user_id,
         Lead.lead_status == LEAD_STATUS_PRIVATE,
@@ -701,51 +772,97 @@ def api_lead_claim(
     if private_count >= private_limit:
         return JSONResponse({"ok": False, "msg": f"私海线索已达上限({private_limit}条)，请先清理无效线索"}, 400)
 
-    # 执行认领
     lead.owner = user_name
     lead.owner_id = user_id
     lead.lead_status = LEAD_STATUS_PRIVATE
     lead.assigned_at = _now()
     lead.last_followed = _now()
 
-    # 设置回收倒计时 (N天未跟进)
     n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
     lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
 
     db.add(ClaimRecord(lead_id=lead_id, user_id=user_id, user_name=user_name))
+    db.flush()
+
+    existing_customer = db.query(Customer).filter(
+        (Customer.lead_id == lead_id) |
+        ((Customer.company_name == lead.company_name) & (Customer.phone == lead.contact_mobile))
+    ).first()
+    if not existing_customer:
+        customer = Customer(
+            lead_id=lead.id,
+            company_name=lead.company_name,
+            contact_name=lead.contact_name,
+            phone=lead.contact_mobile,
+            email=lead.email,
+            country=lead.country or lead.target_market,
+            main_category=lead.product_interest or "",
+            lifecycle_status=STATUS_NEW,
+            status_changed_at=_now(),
+            status_changed_by=user_name,
+            owner=user_name,
+            owner_id=user_id,
+        )
+        db.add(customer)
+        db.flush()
+        db.add(ActivityLog(
+            lead_id=lead_id, customer_id=customer.id,
+            activity_type="status_change",
+            content=f"线索由{user_name}认领，自动进入客户管理-开发中阶段",
+            status_from=None, status_to=STATUS_NEW,
+            created_by=user_name,
+        ))
+    else:
+        existing_customer.owner = user_name
+        existing_customer.owner_id = user_id
+
     db.commit()
-    return {"ok": True, "msg": f"认领成功，请在{n_days}天内完成首次跟进"}
+    return {"ok": True, "msg": f"认领成功，请在{n_days}天内完成首次跟进，已同步至客户与商机"}
 
 
 @app.post("/api/leads/{lead_id}/follow-up")
 def api_lead_follow_up(
-    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+    lead_id: int, data: FollowUpData, db: Session = Depends(get_db)
 ):
     """添加跟进记录 (PRD 3.3)"""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
 
+    nft = None
+    if data.next_follow_at:
+        try: nft = datetime.datetime.fromisoformat(data.next_follow_at)
+        except: pass
+
     fu = FollowUp(
         lead_id=lead_id,
-        status=data.get("status", "初步沟通"),
-        content=data.get("content", ""),
-        image_urls=data.get("image_urls"),
-        next_follow_at=data.get("next_follow_at"),
-        created_by=data.get("created_by", lead.owner or ""),
+        status=data.status,
+        content=data.content,
+        image_urls=data.image_urls or None,
+        next_follow_at=nft,
+        created_by=data.created_by or lead.owner or "",
     )
     db.add(fu)
 
-    # 更新线索跟进状态
     lead.last_followed = _now()
     lead.follow_count = (lead.follow_count or 0) + 1
-    if data.get("next_follow_at"):
-        lead.next_follow_at = data.get("next_follow_at")
+    if data.next_follow_at:
+        try: lead.next_follow_at = datetime.datetime.fromisoformat(data.next_follow_at)
+        except: pass
 
-    # 重置回收倒计时
     n_days = SystemConfig.get(db, "reclaim_no_follow_days", 7)
     lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
     lead.auto_reclaim = False
+
+    linked_customer = db.query(Customer).filter(Customer.lead_id == lead_id).first()
+    if linked_customer:
+        db.add(ActivityLog(
+            lead_id=lead_id,
+            customer_id=linked_customer.id,
+            activity_type="call",
+            content=f"[线索跟进] {fu.status}: {fu.content}",
+            created_by=fu.created_by,
+        ))
 
     db.commit()
     db.refresh(fu)
@@ -754,47 +871,55 @@ def api_lead_follow_up(
 
 @app.post("/api/leads/{lead_id}/convert")
 def api_lead_convert(
-    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+    lead_id: int, data: ConvertData, db: Session = Depends(get_db)
 ):
     """线索转化 (PRD 3.4): 转商机或转客户"""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
 
-    convert_type = data.get("convert_type", "customer")
+    convert_type = data.convert_type
 
     lead.lead_status = LEAD_STATUS_CONVERTED
     lead.converted_at = _now()
     lead.converted_to_type = convert_type
 
     if convert_type == "customer":
-        customer = Customer(
-            lead_id=lead.id,
-            company_name=lead.company_name,
-            contact_name=lead.contact_name,
-            phone=lead.contact_mobile,
-            email=lead.email,
-            country=lead.country or lead.target_market,
-            lifecycle_status=STATUS_NURTURING,
-            status_changed_at=_now(),
-            status_changed_by=data.get("operator", lead.owner or ""),
-        )
-        db.add(customer)
-        db.flush()
+        # 优先复用认领时自动创建的客户
+        existing = db.query(Customer).filter(Customer.lead_id == lead_id).first()
+        if existing:
+            existing.lifecycle_status = STATUS_NURTURING
+            existing.status_changed_at = _now()
+            existing.status_changed_by = data.operator or lead.owner or ""
+            customer = existing
+            db.flush()
+        else:
+            customer = Customer(
+                lead_id=lead.id,
+                company_name=lead.company_name,
+                contact_name=lead.contact_name,
+                phone=lead.contact_mobile,
+                email=lead.email,
+                country=lead.country or lead.target_market,
+                lifecycle_status=STATUS_NURTURING,
+                status_changed_at=_now(),
+                status_changed_by=data.operator or lead.owner or "",
+            )
+            db.add(customer)
+            db.flush()
         lead.converted_to_id = customer.id
         msg = f"已转化为客户: {customer.company_name}"
     else:
-        # 转商机 - 需要关联一个客户
-        customer_id = data.get("customer_id")
+        customer_id = data.customer_id
         if not customer_id:
             return JSONResponse({"ok": False, "msg": "转商机需要指定关联客户ID"}, 400)
         opp = Opportunity(
             customer_id=customer_id,
-            name=data.get("opportunity_name", f"{lead.company_name}商机"),
+            name=data.opportunity_name or f"{lead.company_name}商机",
             stage="initial",
-            amount=data.get("amount", 0),
-            expected_close_date=data.get("expected_close_date"),
-            notes=data.get("notes", ""),
+            amount=data.amount or 0,
+            expected_close_date=datetime.date.fromisoformat(data.expected_close_date) if data.expected_close_date else None,
+            notes=data.notes or "",
         )
         db.add(opp)
         db.flush()
@@ -806,9 +931,9 @@ def api_lead_convert(
 
 
 @app.post("/api/leads/batch-to-pool")
-def api_lead_batch_to_pool(data: dict = Body(), db: Session = Depends(get_db)):
+def api_lead_batch_to_pool(data: BatchIdsData, db: Session = Depends(get_db)):
     """批量放入公海 (PRD 5.2)"""
-    ids = data.get("ids", [])
+    ids = data.ids
     if not ids:
         return JSONResponse({"ok": False, "msg": "请选择至少一条线索"}, 400)
     updated = db.query(Lead).filter(Lead.id.in_(ids)).update(
@@ -822,15 +947,15 @@ def api_lead_batch_to_pool(data: dict = Body(), db: Session = Depends(get_db)):
 
 @app.post("/api/leads/{lead_id}/reassign")
 def api_lead_reassign(
-    lead_id: int, data: dict = Body(...), db: Session = Depends(get_db)
+    lead_id: int, data: ReassignData, db: Session = Depends(get_db)
 ):
     """主管手动分配线索 (PRD 3.2)"""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
 
-    lead.owner = data.get("user_name", "")
-    lead.owner_id = data.get("user_id")
+    lead.owner = data.user_name or ""
+    lead.owner_id = data.user_id
     lead.lead_status = LEAD_STATUS_PRIVATE
     lead.assigned_at = _now()
     lead.last_followed = _now()
@@ -838,8 +963,33 @@ def api_lead_reassign(
     lead.reclaim_deadline = _now() + datetime.timedelta(days=n_days)
     lead.auto_reclaim = False
 
+    # ── 自动创建/更新客户记录 ──
+    existing_customer = db.query(Customer).filter(
+        (Customer.lead_id == lead_id) |
+        ((Customer.company_name == lead.company_name) & (Customer.phone == lead.contact_mobile))
+    ).first()
+    if not existing_customer:
+        customer = Customer(
+            lead_id=lead.id,
+            company_name=lead.company_name,
+            contact_name=lead.contact_name,
+            phone=lead.contact_mobile,
+            email=lead.email,
+            country=lead.country or lead.target_market,
+            main_category=lead.product_interest or "",
+            lifecycle_status=STATUS_NEW,
+            status_changed_at=_now(),
+            status_changed_by=lead.owner,
+            owner=lead.owner,
+            owner_id=lead.owner_id,
+        )
+        db.add(customer)
+    else:
+        existing_customer.owner = lead.owner
+        existing_customer.owner_id = lead.owner_id
+
     db.commit()
-    return {"ok": True, "msg": f"已分配给{lead.owner}，回收倒计时已重置"}
+    return {"ok": True, "msg": f"已分配给{lead.owner}，回收倒计时已重置，已同步至客户与商机"}
 
 
 # ═══════════════════════════════════════════════
@@ -857,7 +1007,7 @@ def api_get_config(db: Session = Depends(get_db)):
 
 
 @app.post("/api/config")
-def api_update_config(data: dict = Body(), db: Session = Depends(get_db)):
+def api_update_config(data: DictType[str, Any] = Body(default={}), db: Session = Depends(get_db)):
     """更新系统配置参数 (管理员)"""
     for key, value in data.items():
         cfg = db.query(SystemConfig).filter(SystemConfig.key == key).first()
@@ -904,11 +1054,6 @@ def api_customer_list(
 
     result = []
     for c in customers:
-        hb = {}
-        if c.health_breakdown:
-            try: hb = json.loads(c.health_breakdown)
-            except: pass
-
         result.append({
             "id": c.id, "lead_id": c.lead_id,
             "company_name": c.company_name, "contact_name": c.contact_name,
@@ -917,8 +1062,6 @@ def api_customer_list(
             "shipping_frequency": c.shipping_frequency,
             "usual_routes": c.usual_routes,
             "customer_level": c.customer_level,
-            "health_score": c.health_score,
-            "health_breakdown": hb,
             "lifecycle_status": c.lifecycle_status,
             "lifecycle_label": STATUS_LABELS.get(c.lifecycle_status, c.lifecycle_status),
             "avg_monthly_volume": c.avg_monthly_volume,
@@ -928,6 +1071,7 @@ def api_customer_list(
             "monthly_order_count": c.monthly_order_count,
             "order_frequency_tag": c.order_frequency_tag,
             "cooperation_since": str(c.cooperation_since) if c.cooperation_since else None,
+            "owner": c.owner,
             "created_at": str(c.created_at),
         })
     return {"ok": True, "customers": result, "total": len(result)}
@@ -959,16 +1103,9 @@ def api_customer_metrics(cid: int, db: Session = Depends(get_db)):
     c = db.query(Customer).filter(Customer.id == cid).first()
     if not c:
         return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
-    hb = {}
-    if c.health_breakdown:
-        try: hb = json.loads(c.health_breakdown)
-        except: pass
-
     return {
         "ok": True,
         "metrics": {
-            "health_score": c.health_score,
-            "health_breakdown": hb,
             "volume_mom": c.volume_mom,
             "volume_yoy": c.volume_yoy,
             "monthly_order_count": c.monthly_order_count,
@@ -988,6 +1125,38 @@ def api_trigger_metrics_calc(db: Session = Depends(get_db)):
     return {"ok": True, "msg": f"已更新 {count} 家客户指标", "count": count}
 
 
+@app.get("/api/customers/{cid}/trend")
+def api_customer_trend(cid: int):
+    """近6个月货量走势 (PRD V2 §5: 数据穿透)"""
+    return {"ok": True, "trend": get_6month_trend(cid)}
+
+
+@app.post("/api/customer/{cid}/add-activity")
+def api_customer_add_activity(
+    cid: int,
+    activity_type: str = Query("call"),
+    content: str = Query(...),
+    created_by: str = Query("张晓明"),
+    db: Session = Depends(get_db),
+):
+    """为客户添加跟进记录"""
+    cust = db.query(Customer).filter(Customer.id == cid).first()
+    if not cust:
+        return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
+    if not content.strip():
+        return JSONResponse({"ok": False, "msg": "跟进内容不能为空"}, 400)
+
+    log = ActivityLog(
+        customer_id=cid,
+        activity_type=activity_type,
+        content=content.strip(),
+        created_by=created_by,
+    )
+    db.add(log)
+    db.commit()
+    return {"ok": True, "msg": "跟进记录已保存", "activity_id": log.id}
+
+
 @app.get("/api/customers/{cid}")
 def get_customer(cid: int, db: Session = Depends(get_db)):
     """获取客户详情含画像、商机、订单"""
@@ -997,10 +1166,6 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
     opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
     orders = db.query(Order).filter(Order.customer_id == cid).order_by(desc(Order.created_at)).limit(10).all()
     credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
-    hb = {}
-    if cust.health_breakdown:
-        try: hb = json.loads(cust.health_breakdown)
-        except: pass
     # 线索溯源
     lead_info = None
     if cust.lead_id:
@@ -1019,8 +1184,6 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
             "avg_monthly_volume": cust.avg_monthly_volume,
             "avg_monthly_revenue": cust.avg_monthly_revenue,
             "customer_level": cust.customer_level,
-            "health_score": cust.health_score,
-            "health_breakdown": hb,
             "volume_mom": cust.volume_mom,
             "volume_yoy": cust.volume_yoy,
             "monthly_order_count": cust.monthly_order_count,
@@ -1053,7 +1216,7 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
             "main_category": cust.main_category, "shipping_frequency": cust.shipping_frequency,
             "usual_routes": cust.usual_routes, "avg_monthly_volume": cust.avg_monthly_volume,
             "avg_monthly_revenue": cust.avg_monthly_revenue,
-            "customer_level": cust.customer_level, "health_score": cust.health_score,
+            "customer_level": cust.customer_level,
         },
         "opportunities": [{"id": o.id, "name": o.name, "stage": o.stage,
                            "amount": o.amount, "win_probability": o.win_probability} for o in opps],

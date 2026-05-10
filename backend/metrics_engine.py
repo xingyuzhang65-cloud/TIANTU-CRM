@@ -1,37 +1,42 @@
-"""PRD 核心指标计算引擎 — 跨境物流CRM客户与商机模块"""
+"""PRD V2.0 核心指标计算引擎 — 跨境物流CRM客户与商机模块"""
 import datetime
 import json
 from sqlalchemy import func
 from database import SessionLocal
-from models import Customer, Order, ActivityLog
+from models import Customer, Order, ActivityLog, CreditInfo, WARNING_MOM_THRESHOLD
 
 
 def calc_metrics():
-    """每日定时计算所有客户的核心指标 (PRD §3)"""
+    """每日定时计算所有客户的核心指标 (PRD V2.0 §3-4)"""
     db = SessionLocal()
     now = datetime.datetime.now()
     today = datetime.date.today()
 
     customers = db.query(Customer).all()
     for c in customers:
-        # ── 3.1 货量同环比 ──
-        mom = _calc_mom(db, c, today)
+        # ── MoM: 本月至今 vs 上月同期 (PRD V2 §3) ──
+        mom = _calc_mom_mtd(db, c, today)
+
+        # ── YoY ──
         yoy = _calc_yoy(db, c, today)
 
-        # ── 3.2 下单频率动态打标 ──
+        # ── 下单频率: 近90天平均间隔 ──
         freq_tag = _calc_frequency_tag(db, c, now)
 
-        # ── 3.3 健康分算法 ──
-        health, breakdown = _calc_health_score(db, c, now)
+        # ── 健康分 (PRD V2 §4.2: 货量50% + 回款30% + 活跃20%) ──
+        health, breakdown = _calc_health_score_v2(db, c, now, mom)
 
-        # 近30天运单数
+        # ── 智能预警 (PRD V2 §3): MoM跌幅>20% → is_warning ──
+        is_warning = mom < WARNING_MOM_THRESHOLD if mom is not None else False
+
+        # ── 近30天运单数 ──
         order_count_30d = db.query(func.count(Order.id)).filter(
             Order.customer_id == c.id,
             Order.created_at >= now - datetime.timedelta(days=30)
         ).scalar() or 0
 
-        # 本月 / 上月货量
-        current_month_volume, prev_month_volume = _get_month_volumes(db, c, today)
+        # ── 本月 / 上月货量 ──
+        current_month_volume, prev_month_volume = _get_mtd_volumes(db, c, today)
 
         c.volume_mom = mom
         c.volume_yoy = yoy
@@ -40,6 +45,7 @@ def calc_metrics():
         c.order_frequency_tag = freq_tag
         c.health_score = health
         c.health_breakdown = json.dumps(breakdown, ensure_ascii=False)
+        c.is_warning = is_warning
         c.last_metrics_calc_at = now
 
     db.commit()
@@ -47,26 +53,43 @@ def calc_metrics():
     return len(customers)
 
 
-def _calc_mom(db, c, today):
-    """货量环比 MoM"""
-    current = _month_volume(db, c, today)
-    prev = _month_volume(db, c, _prev_month(today))
-    if prev == 0:
-        return 100.0 if current > 0 else 0.0  # 纯增量标记为100%
-    return round((current - prev) / prev * 100, 1)
+def get_6month_trend(customer_id):
+    """近6个月货量走势 (PRD V2 §5: 数据穿透—悬浮走势图)"""
+    db = SessionLocal()
+    today = datetime.date.today()
+    months = []
+    for i in range(5, -1, -1):
+        d = _month_offset(today, -i)
+        vol = _month_volume(db, db.query(Customer).filter(Customer.id == customer_id).first(), d)
+        months.append({
+            "month": d.strftime("%Y-%m"),
+            "label": d.strftime("%m月"),
+            "volume": round(vol, 1),
+        })
+    db.close()
+    return months
+
+
+def _calc_mom_mtd(db, c, today):
+    """本月至今 vs 上月同期货量环比 (PRD V2: MTD口径)"""
+    current_mtd = _mtd_volume(db, c, today)
+    prev_mtd = _prev_mtd_volume(db, c, today)
+    if prev_mtd == 0:
+        return 100.0 if current_mtd > 0 else 0.0
+    return round((current_mtd - prev_mtd) / prev_mtd * 100, 1)
 
 
 def _calc_yoy(db, c, today):
-    """货量同比 YoY"""
-    current = _month_volume(db, c, today)
-    prev_year_same = _month_volume(db, c, today.replace(year=today.year - 1))
-    if prev_year_same == 0:
-        return 100.0 if current > 0 else 0.0
-    return round((current - prev_year_same) / prev_year_same * 100, 1)
+    """货量同比"""
+    current_mtd = _mtd_volume(db, c, today)
+    prev_year_mtd = _prev_year_mtd_volume(db, c, today)
+    if prev_year_mtd == 0:
+        return 100.0 if current_mtd > 0 else 0.0
+    return round((current_mtd - prev_year_mtd) / prev_year_mtd * 100, 1)
 
 
 def _calc_frequency_tag(db, c, now):
-    """下单频率动态打标 — 近90天运单平均间隔"""
+    """下单频率 — 近90天平均下单间隔 (PRD V2 §4.1)"""
     orders = db.query(Order).filter(
         Order.customer_id == c.id,
         Order.created_at >= now - datetime.timedelta(days=90)
@@ -91,56 +114,89 @@ def _calc_frequency_tag(db, c, now):
         return "Weekly"
     elif avg_interval <= 30:
         return "Monthly"
+    return "Inactive"
+
+
+def _calc_health_score_v2(db, c, now, mom):
+    """健康分 V2 (PRD §4.2): 货量50% + 回款30% + 活跃互动20%"""
+    breakdown = {"volume": 0, "payment": 0, "engagement": 0}
+
+    # ── 货量表现 (50分): MoM跌幅>20%按比例扣分 ──
+    if mom is not None and mom < WARNING_MOM_THRESHOLD:
+        decline = abs(mom) - abs(WARNING_MOM_THRESHOLD)
+        deduction = min(50, int(decline / 2))
+        breakdown["volume"] = max(0, 50 - deduction)
     else:
-        return "Inactive"
+        breakdown["volume"] = 50
 
+    # ── 回款表现 (30分): 对接风控模块 ──
+    credit = db.query(CreditInfo).filter(CreditInfo.customer_id == c.id).first()
+    if credit:
+        if credit.balance_due <= 0:
+            breakdown["payment"] = 30
+        elif credit.days_aged <= 30:
+            breakdown["payment"] = 20
+        elif credit.days_aged <= 60:
+            breakdown["payment"] = 10
+        else:
+            breakdown["payment"] = 0  # 严重逾期
+    else:
+        breakdown["payment"] = 15  # 无授信记录默认一半
 
-def _calc_health_score(db, c, now):
-    """健康分算法 (0-100) — 加权计算模型"""
-    breakdown = {"stability": 0, "follow_activity": 0, "order_activity": 0}
-
-    # ── 发货稳定性 (40分): 基于MoM变化 ──
-    mom = c.volume_mom if c.volume_mom is not None else 0
-    if mom >= -10:
-        breakdown["stability"] = 40
-    elif mom < -10:
-        # 每下降5%扣2分
-        decline = abs(mom) - 10
-        deduct = int(decline / 5) * 2
-        breakdown["stability"] = max(0, 40 - deduct)
-    # 长期不发货: 保持0分
-
-    # ── 跟进活跃度 (30分): 近N天有效跟进 ──
+    # ── 活跃互动 (20分): 近7天有跟进记录 ──
     recent_follow = db.query(func.max(ActivityLog.created_at)).filter(
         ActivityLog.customer_id == c.id,
         ActivityLog.activity_type.in_(['call', 'visit', 'meeting', 'email'])
     ).scalar()
-    if recent_follow:
-        days_since = (now - recent_follow).days
-        if days_since <= 7:
-            breakdown["follow_activity"] = 30
-        elif days_since <= 15:
-            breakdown["follow_activity"] = 15
-    # >15天或无效跟进 → 0分
-
-    # ── 运单活跃度 (30分): 近N天新增运单 ──
-    recent_order = db.query(func.max(Order.created_at)).filter(
-        Order.customer_id == c.id
-    ).scalar()
-    if recent_order:
-        days_since = (now - recent_order).days
-        if days_since <= 30:
-            breakdown["order_activity"] = 30
-        elif days_since <= 60:
-            breakdown["order_activity"] = 15
-    # >60天 → 0分
+    if recent_follow and (now - recent_follow).days <= 7:
+        breakdown["engagement"] = 20
 
     total = sum(breakdown.values())
     return total, breakdown
 
 
+def _mtd_volume(db, c, target_date):
+    """本月1日→target_date的累计货量 (Month-To-Date)"""
+    start = target_date.replace(day=1)
+    end = target_date + datetime.timedelta(days=1)
+    result = db.query(func.sum(Order.weight_kg)).filter(
+        Order.customer_id == c.id,
+        Order.created_at >= start,
+        Order.created_at < end,
+    ).scalar()
+    return result or 0
+
+
+def _prev_mtd_volume(db, c, today):
+    """上月1日→上月同日的累计货量"""
+    prev = _month_offset(today, -1)
+    start = prev.replace(day=1)
+    day = min(today.day, _days_in_month(prev.year, prev.month))
+    end = prev.replace(day=day) + datetime.timedelta(days=1)
+    result = db.query(func.sum(Order.weight_kg)).filter(
+        Order.customer_id == c.id,
+        Order.created_at >= start,
+        Order.created_at < end,
+    ).scalar()
+    return result or 0
+
+
+def _prev_year_mtd_volume(db, c, today):
+    """去年本月1日→去年本月同日的累计货量"""
+    prev_year = today.replace(year=today.year - 1)
+    start = prev_year.replace(day=1)
+    day = min(today.day, _days_in_month(prev_year.year, prev_year.month))
+    end = prev_year.replace(day=day) + datetime.timedelta(days=1)
+    result = db.query(func.sum(Order.weight_kg)).filter(
+        Order.customer_id == c.id,
+        Order.created_at >= start,
+        Order.created_at < end,
+    ).scalar()
+    return result or 0
+
+
 def _month_volume(db, c, target_date):
-    """获取指定月份的总货量(计费重KG)"""
+    """整月货量"""
     start = target_date.replace(day=1)
     if target_date.month == 12:
         end = target_date.replace(year=target_date.year + 1, month=1, day=1)
@@ -154,20 +210,32 @@ def _month_volume(db, c, target_date):
     return result or 0
 
 
-def _get_month_volumes(db, c, today):
-    """获取本月和上月货量"""
-    current = _month_volume(db, c, today)
-    prev = _month_volume(db, c, _prev_month(today))
+def _get_mtd_volumes(db, c, today):
+    """获取本月至今和上月同期货量"""
+    current = _mtd_volume(db, c, today)
+    prev = _prev_mtd_volume(db, c, today)
     return current, prev
 
 
-def _prev_month(d):
-    """上个月同日"""
-    if d.month == 1:
-        return d.replace(year=d.year - 1, month=12)
-    return d.replace(month=d.month - 1)
+def _month_offset(d, offset):
+    """月份偏移"""
+    m = d.month + offset
+    y = d.year
+    while m <= 0:
+        m += 12
+        y -= 1
+    while m > 12:
+        m -= 12
+        y += 1
+    day = min(d.day, _days_in_month(y, m))
+    return datetime.date(y, m, day)
+
+
+def _days_in_month(y, m):
+    import calendar
+    return calendar.monthrange(y, m)[1]
 
 
 if __name__ == "__main__":
     count = calc_metrics()
-    print(f"Metrics calculated for {count} customers")
+    print(f"Metrics V2 calculated for {count} customers")
