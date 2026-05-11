@@ -211,6 +211,18 @@ class SystemConfig(Base):
         }
 
 
+# ── 1.4 用户认证 ──
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    password_hash = Column(String(200), nullable=False)
+    name = Column(String(100))
+    phone = Column(String(30))
+    role = Column(String(20), default="sales", comment="sales/admin")
+    created_at = Column(DateTime, default=_now)
+
+
 # ── 2. 客户画像 ──
 class Customer(Base):
     __tablename__ = "customers"

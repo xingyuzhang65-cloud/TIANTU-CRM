@@ -20,7 +20,7 @@ from database import engine, Base, get_db, SessionLocal
 from models import (
     Lead, Customer, Opportunity, Quotation, Order,
     TrackingEvent, CreditInfo, ActivityLog, Complaint,
-    FollowUp, ClaimRecord, SystemConfig,
+    FollowUp, ClaimRecord, SystemConfig, User,
     ALL_STATUSES, STATUS_LABELS, TRANSITION_REQUIREMENTS,
     STATUS_NEW,
     LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
@@ -30,6 +30,9 @@ from models import (
     STAGE_TO_DEFAULT_STATUS,
     COOPERATING_AUTO_DAYS, WARNING_MOM_THRESHOLD,
 )
+from jose import jwt, JWTError
+import bcrypt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from metrics_engine import calc_metrics, get_6month_trend
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -81,6 +84,55 @@ class BatchIdsData(BaseModel):
 class ReassignData(BaseModel):
     user_name: str = ""
     user_id: int = 0
+
+
+# ── Auth config ──
+SECRET_KEY = "crm-cross-border-logistics-secret-key-2024"
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_HOURS = 720  # 30 days
+security = HTTPBearer(auto_error=False)
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+# ── Auth schemas ──
+class AuthRegisterData(BaseModel):
+    username: str = ""
+    password: str = ""
+    name: str = ""
+    phone: str = ""
+
+
+class AuthLoginData(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
+def create_token(user_id: int, username: str) -> str:
+    expire = datetime.datetime.utcnow() + datetime.timedelta(hours=TOKEN_EXPIRE_HOURS)
+    payload = {"sub": str(user_id), "username": username, "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """Verify JWT and return current user or None"""
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+        user = db.query(User).filter(User.id == user_id).first()
+        return user
+    except (JWTError, ValueError):
+        return None
 
 
 def render(name: str, request: Request, **kwargs):
@@ -193,6 +245,81 @@ def metric_value(v):
     if v is None:
         return 0
     return v
+
+
+# ═══════════════════════════════════════════════
+# 页面路由
+# ═══════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════
+# API 路由 - 用户认证
+# ═══════════════════════════════════════════════
+
+@app.post("/api/auth/register")
+def auth_register(data: AuthRegisterData, db: Session = Depends(get_db)):
+    """用户注册"""
+    username = (data.username or "").strip()
+    password = (data.password or "").strip()
+    name = (data.name or "").strip()
+    phone = (data.phone or "").strip()
+    if not username or not password:
+        return JSONResponse({"ok": False, "msg": "手机号和密码不能为空"}, 400)
+    if len(password) < 6:
+        return JSONResponse({"ok": False, "msg": "密码至少6位"}, 400)
+    existing = db.query(User).filter(User.username == username).first()
+    if existing:
+        return JSONResponse({"ok": False, "msg": "该手机号已注册"}, 400)
+    user = User(
+        username=username,
+        password_hash=hash_password(password),
+        name=name or f"用户{username[-4:]}",
+        phone=phone or username,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_token(user.id, user.username)
+    return {
+        "ok": True,
+        "msg": "注册成功",
+        "token": token,
+        "user": {"id": user.id, "username": user.username, "name": user.name, "phone": user.phone, "role": user.role},
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(data: AuthLoginData, db: Session = Depends(get_db)):
+    """用户登录"""
+    username = (data.username or "").strip()
+    password = (data.password or "").strip()
+    if not username or not password:
+        return JSONResponse({"ok": False, "msg": "请输入手机号和密码"}, 400)
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return JSONResponse({"ok": False, "msg": "账号不存在"}, 400)
+    if not verify_password(password, user.password_hash):
+        return JSONResponse({"ok": False, "msg": "密码错误"}, 400)
+    token = create_token(user.id, user.username)
+    return {
+        "ok": True,
+        "msg": "登录成功",
+        "token": token,
+        "user": {"id": user.id, "username": user.username, "name": user.name, "phone": user.phone, "role": user.role},
+    }
+
+
+@app.get("/api/auth/me")
+def auth_me(current_user: User = Depends(get_current_user)):
+    """获取当前用户信息"""
+    if not current_user:
+        return JSONResponse({"ok": False, "msg": "未登录"}, 401)
+    return {
+        "ok": True,
+        "user": {
+            "id": current_user.id, "username": current_user.username,
+            "name": current_user.name, "phone": current_user.phone, "role": current_user.role,
+        },
+    }
 
 
 # ═══════════════════════════════════════════════
@@ -1500,6 +1627,68 @@ def analytics_summary(db: Session = Depends(get_db)):
             {"name": "注意(60-79)", "value": warning, "color": "#f59e0b"},
             {"name": "预警(<60)", "value": critical, "color": "#ef4444"},
         ],
+    }
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 财务信用 (Mobile)
+# ═══════════════════════════════════════════════
+
+@app.get("/api/credits/list")
+def api_credits_list(db: Session = Depends(get_db)):
+    """信用列表"""
+    credits = db.query(CreditInfo).join(Customer).order_by(desc(CreditInfo.days_aged)).all()
+    total_balance = db.query(func.sum(CreditInfo.balance_due)).scalar() or 0
+    overdue = db.query(func.sum(CreditInfo.balance_due)).filter(CreditInfo.days_aged > 30).scalar() or 0
+    return {
+        "ok": True,
+        "summary": {"total_balance": total_balance, "overdue": overdue},
+        "credits": [{
+            "id": c.id, "customer_id": c.customer_id,
+            "company_name": c.customer.company_name,
+            "credit_score": c.credit_score, "credit_limit": c.credit_limit,
+            "balance_due": c.balance_due, "days_aged": c.days_aged,
+            "payment_terms": c.payment_terms, "is_blacklisted": c.is_blacklisted,
+            "risk_notes": c.risk_notes,
+            "usage_rate": round(c.balance_due / c.credit_limit * 100, 1) if c.credit_limit > 0 else 0,
+        } for c in credits],
+    }
+
+
+@app.get("/api/orders/list")
+def api_orders_list(db: Session = Depends(get_db)):
+    """运单列表"""
+    orders = db.query(Order).order_by(desc(Order.created_at)).all()
+    return {
+        "ok": True,
+        "orders": [{
+            "id": o.id, "customer_id": o.customer_id,
+            "company_name": o.customer.company_name if o.customer else "",
+            "tracking_number": o.tracking_number, "route_detail": o.route_detail,
+            "cargo_desc": o.cargo_desc, "weight_kg": o.weight_kg, "volume_cbm": o.volume_cbm,
+            "status": o.status, "origin": o.origin, "destination": o.destination,
+            "etd": str(o.etd) if o.etd else None, "eta": str(o.eta) if o.eta else None,
+            "has_exception": o.has_exception, "exception_type": o.exception_type,
+            "created_at": str(o.created_at),
+        } for o in orders],
+    }
+
+
+@app.get("/api/quotations/list")
+def api_quotations_list(db: Session = Depends(get_db)):
+    """报价列表"""
+    quotes = db.query(Quotation).order_by(desc(Quotation.created_at)).all()
+    return {
+        "ok": True,
+        "quotations": [{
+            "id": q.id, "customer_id": q.customer_id,
+            "company_name": q.customer.company_name if q.customer else "",
+            "route_type": q.route_type, "route_detail": q.route_detail,
+            "cargo_type": q.cargo_type, "weight_kg": q.weight_kg, "volume_cbm": q.volume_cbm,
+            "total_price": q.total_price, "incoterms": q.incoterms,
+            "status": q.status, "valid_until": str(q.valid_until) if q.valid_until else None,
+            "created_at": str(q.created_at),
+        } for q in quotes],
     }
 
 
