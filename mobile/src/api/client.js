@@ -24,7 +24,7 @@ const storage = {
   },
 };
 
-const BACKEND_TUNNEL = 'https://green-socks-crash.loca.lt';
+const BACKEND_TUNNEL = 'https://dull-bobcats-act.loca.lt';
 const getBaseURL = () => {
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
