@@ -26,8 +26,11 @@ const storage = {
 
 const BACKEND_TUNNEL = 'https://green-socks-crash.loca.lt';
 const getBaseURL = () => {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('loca.lt')) {
-    return BACKEND_TUNNEL;
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.includes('loca.lt') || host.includes('github.io')) {
+      return BACKEND_TUNNEL;
+    }
   }
   return 'http://localhost:8000';
 };
