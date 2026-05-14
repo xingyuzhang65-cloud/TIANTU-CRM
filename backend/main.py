@@ -9,6 +9,7 @@ from typing import Dict as DictType, Any
 from collections import defaultdict
 
 from fastapi import FastAPI, Request, Depends, Query, Body
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +39,14 @@ from metrics_engine import calc_metrics, get_6month_trend
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI(title="跨境物流 CRM 系统", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory=os.path.join(_BASE_DIR, "static")), name="static")
 jinja_env = Environment(loader=FileSystemLoader(os.path.join(_BASE_DIR, "templates")),
