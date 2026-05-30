@@ -1,0 +1,801 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="moments-layout">
+  <!-- 左侧栏: 发帖区 -->
+  <aside class="moments-left">
+    <div class="card post-composer">
+      <div class="card-header">
+        <h3>✍️ 发布动态</h3>
+      </div>
+      <div class="card-body">
+        <textarea id="postContent" class="form-textarea" rows="4" placeholder="分享你的工作动态、客户进展或团队成果..." maxlength="2000"></textarea>
+        <div class="form-row">
+          <label class="form-label">添加图片 <span class="text-muted">(可选，最多9张)</span></label>
+          <input type="file" id="postImages" class="file-input" accept="image/*" multiple onchange="previewPostImages()" style="display:none;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('postImages').click()">📷 选择图片</button>
+          <div id="imagePreview" class="image-preview-grid"></div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">动态类型</label>
+          <select id="postType" class="form-select">
+            <option value="DAILY">📝 日常工作</option>
+            <option value="ACTIVITY">🎯 业务动态</option>
+            <option value="SYSTEM_KPI">📊 业绩战报</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">可见范围</label>
+          <select id="postVisible" class="form-select" onchange="toggleVisibleTarget()">
+            <option value="ALL">🌐 全公司可见</option>
+            <option value="DEPT">🏢 仅本部门</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">关联客户 <span class="text-muted">(可选)</span></label>
+          <select id="postClient" class="form-select">
+            <option value="">不关联客户</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.company_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitPost()" id="postBtn">
+          🚀 发布动态
+        </button>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="card stats-mini">
+      <div class="card-body">
+        <div class="stat-item">
+          <span class="stat-num" id="totalMoments">--</span>
+          <span class="stat-label">全部动态</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-num" id="todayMoments">--</span>
+          <span class="stat-label">今日新发布</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 中间栏: 动态信息流 -->
+  <main class="moments-center">
+    <div class="feed-header">
+      <h2>📱 团队广场</h2>
+      <div class="feed-tabs">
+        <button class="feed-tab active" data-filter="ALL" onclick="setFilter('ALL', this)">全部</button>
+        <button class="feed-tab" data-filter="DAILY" onclick="setFilter('DAILY', this)">日常工作</button>
+        <button class="feed-tab" data-filter="ACTIVITY" onclick="setFilter('ACTIVITY', this)">业务动态</button>
+        <button class="feed-tab" data-filter="SYSTEM_KPI" onclick="setFilter('SYSTEM_KPI', this)">业绩战报</button>
+      </div>
+    </div>
+
+    <div id="feedContainer" class="feed-container">
+      <div class="loading-spinner" id="feedLoading">
+        <div class="spinner"></div>
+        <p>加载中...</p>
+      </div>
+    </div>
+
+    <div id="loadMore" class="load-more" style="display:none;">
+      <button class="btn btn-outline btn-block" onclick="loadFeed()">加载更多</button>
+    </div>
+  </main>
+
+  <!-- 右侧栏: 活跃用户 -->
+  <aside class="moments-right">
+    <div class="card">
+      <div class="card-header">
+        <h3>🔥 本周活跃</h3>
+      </div>
+      <div class="card-body" id="activeUsers">
+        <p class="text-muted text-sm">加载中...</p>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- 图片灯箱 -->
+<div class="lightbox" id="lightbox" style="display:none;" onclick="closeLightbox()">
+  <span class="lightbox-close">&times;</span>
+  <img id="lightboxImg" src="" alt="原图">
+</div>
+
+<!-- 评论弹窗 -->
+<div class="modal-overlay" id="commentModal" style="display:none;">
+  <div class="modal modal-sm" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>💬 评论</h3>
+      <button class="modal-close" onclick="closeCommentModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="commentList"></div>
+    <div class="modal-footer">
+      <input type="text" id="commentInput" class="form-input" placeholder="写下你的评论..." maxlength="500" onkeydown="if(event.key==='Enter')submitComment()">
+      <button class="btn btn-primary btn-sm" onclick="submitComment()">发送</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.moments-layout {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  height: calc(100vh - 40px);
+  overflow: hidden;
+}
+.moments-left {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+.moments-center {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+.moments-right {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+/* 发帖区 */
+.post-composer { margin-bottom: 16px; }
+.post-composer .form-textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.post-composer .form-row { margin-top: 10px; }
+.post-composer .form-label { display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; font-weight: 500; }
+.post-composer .form-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* 统计小卡片 */
+.stats-mini { margin-bottom: 16px; }
+.stats-mini .card-body { display: flex; }
+.stat-item { flex: 1; text-align: center; }
+.stat-num { display: block; font-size: 22px; font-weight: 700; color: #2563eb; }
+.stat-label { font-size: 11px; color: #94a3b8; }
+
+/* Feed头部 */
+.feed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.feed-header h2 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; }
+.feed-tabs { display: flex; gap: 4px; }
+.feed-tab {
+  padding: 6px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  color: #64748b;
+  transition: all .2s;
+}
+.feed-tab:hover { border-color: #2563eb; color: #2563eb; }
+.feed-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+/* Feed卡片 */
+.feed-container { display: flex; flex-direction: column; gap: 12px; }
+.moment-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow .2s;
+}
+.moment-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+.moment-card.kpi { background: linear-gradient(135deg, #fef9e7, #fefce8); border-color: #fde68a; }
+
+.moment-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.moment-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.moment-meta { flex: 1; }
+.moment-name { font-size: 14px; font-weight: 600; color: #0f172a; }
+.moment-time { font-size: 11px; color: #94a3b8; }
+
+.moment-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.badge-daily { background: #eff6ff; color: #2563eb; }
+.badge-activity { background: #f0fdf4; color: #16a34a; }
+.badge-kpi { background: #fefce8; color: #ca8a04; }
+
+.moment-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.moment-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+.moment-vis-badge {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-right: auto;
+}
+.moment-link-client {
+  font-size: 11px;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: auto;
+}
+
+/* 点赞/评论按钮 */
+.btn-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #64748b;
+  transition: all .15s;
+}
+.btn-like:hover { border-color: #ef4444; color: #ef4444; }
+.btn-like.liked { background: #fef2f2; border-color: #fecaca; color: #ef4444; }
+
+.btn-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #64748b;
+  transition: all .15s;
+}
+.btn-comment:hover { border-color: #2563eb; color: #2563eb; }
+
+/* 加载更多 */
+.load-more { text-align: center; padding: 16px 0; }
+
+/* 评论弹窗 */
+#commentModal.show { display: flex !important; }
+.comment-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.comment-item:last-child { border-bottom: none; }
+.comment-user { font-size: 13px; font-weight: 600; color: #0f172a; }
+.comment-text { font-size: 13px; color: #334155; margin-top: 2px; }
+.comment-reply { color: #2563eb; font-size: 12px; }
+.comment-time { font-size: 10px; color: #94a3b8; }
+
+/* 活跃用户 */
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.user-row:last-child { border-bottom: none; }
+.user-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.user-row-name { font-size: 13px; color: #334155; }
+.user-row-count { font-size: 11px; color: #94a3b8; margin-left: auto; }
+
+/* Loading */
+.loading-spinner { text-align: center; padding: 40px; }
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  margin: 0 auto 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 图片 */
+.moment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.moment-img {
+  width: calc(33.33% - 4px);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.moment-img:hover { opacity: .85; }
+.moment-images:has(.moment-img:nth-child(1):nth-last-child(1)) .moment-img { width: 100%; aspect-ratio: 16/10; }
+.moment-images:has(.moment-img:nth-child(2):nth-last-child(1)) .moment-img { width: calc(50% - 3px); aspect-ratio: 1; }
+.moment-images:has(.moment-img:nth-child(2):nth-last-child(1)) .moment-img,
+.moment-images:has(.moment-img:nth-child(1):nth-last-child(2)) .moment-img { width: calc(50% - 3px); aspect-ratio: 1; }
+
+/* 图片预览 */
+.image-preview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.preview-thumb {
+  width: 60px; height: 60px;
+  border-radius: 6px;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  border: 1px solid #e2e8f0;
+}
+.preview-thumb .remove-btn {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* 灯箱 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.9);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 20px; right: 30px;
+  font-size: 36px;
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+}
+.lightbox-close:hover { color: #ccc; }
+
+.file-input { display: none; }
+
+/* 通用 */
+.text-muted { color: #94a3b8; }
+.text-sm { font-size: 12px; }
+.card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
+.card-header { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; }
+.card-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; }
+.card-body { padding: 14px 16px; }
+.btn-block { display: block; width: 100%; }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+
+.modal-sm { max-width: 420px; width: 90%; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #e2e8f0; }
+.modal-header h3 { margin: 0; font-size: 16px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #94a3b8; }
+.modal-body { padding: 14px 18px; max-height: 300px; overflow-y: auto; }
+.modal-footer { padding: 10px 18px; border-top: 1px solid #e2e8f0; display: flex; gap: 8px; }
+.modal-footer .form-input { flex: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 20px; font-size: 13px; }
+</style>
+
+<script>
+let currentPage = 1;
+let currentFilter = 'ALL';
+let currentMomentId = null;
+let feedData = [];
+let pendingImages = [];
+
+function toggleVisibleTarget() {
+  // DEPT already uses current user department, no extra UI needed
+}
+
+async function loadFeed(reset = true) {
+  if (reset) { currentPage = 1; feedData = []; document.getElementById('feedContainer').innerHTML = ''; }
+
+  const container = document.getElementById('feedContainer');
+  const loading = document.getElementById('feedLoading');
+  loading.style.display = 'block';
+
+  try {
+    const params = new URLSearchParams({ page: currentPage, page_size: 10 });
+    const res = await fetch(`/api/v1/crm/moments?${params}`);
+    const data = await res.json();
+
+    if (!data.ok) { showToast(data.msg || '加载失败', 'error'); return; }
+
+    if (reset) { feedData = []; container.innerHTML = ''; }
+
+    // 前端按类型过滤
+    let items = data.items;
+    if (currentFilter !== 'ALL') {
+      items = items.filter(i => i.type === currentFilter);
+    }
+
+    feedData = reset ? items : [...feedData, ...items];
+
+    renderFeed(feedData);
+
+    document.getElementById('loadMore').style.display = data.has_more ? 'block' : 'none';
+
+    // 更新统计
+    document.getElementById('totalMoments').textContent = data.total || '--';
+    const today = new Date().toISOString().split('T')[0];
+    const todayCount = data.items.filter(i => i.created_at.startsWith(today)).length;
+    document.getElementById('todayMoments').textContent = todayCount;
+
+    // 更新活跃用户
+    updateActiveUsers(data.items);
+
+    currentPage++;
+  } catch (e) {
+    showToast('加载失败: ' + e.message, 'error');
+  } finally {
+    loading.style.display = 'none';
+  }
+}
+
+function renderFeed(items) {
+  const container = document.getElementById('feedContainer');
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="loading-spinner"><p style="color:#94a3b8;">暂无动态，快去发布第一条吧~</p></div>';
+    return;
+  }
+
+  container.innerHTML = items.map(m => {
+    const avatarLetter = (m.user?.name || '?')[0];
+    const typeClass = m.type === 'SYSTEM_KPI' ? 'kpi' : '';
+    const badgeClass = m.type === 'DAILY' ? 'badge-daily' : m.type === 'ACTIVITY' ? 'badge-activity' : 'badge-kpi';
+    const badgeLabel = m.type === 'DAILY' ? '日常工作' : m.type === 'ACTIVITY' ? '业务动态' : '业绩战报';
+    const visLabel = m.visible_type === 'ALL' ? '🌐 全公司' : '🏢 本部门';
+    const time = formatTime(m.created_at);
+    const likeBtnClass = m.user_liked ? 'btn-like liked' : 'btn-like';
+    const likeIcon = m.user_liked ? '❤️' : '🤍';
+
+    let clientTag = '';
+    if (m.link_client) {
+      clientTag = `<span class="moment-link-client">🔗 ${m.link_client.company_name}</span>`;
+    }
+
+    return `
+      <div class="moment-card ${typeClass}">
+        <div class="moment-header">
+          <div class="moment-avatar">${avatarLetter}</div>
+          <div class="moment-meta">
+            <div class="moment-name">${m.user?.name || '未知'} <span class="moment-type-badge ${badgeClass}">${badgeLabel}</span></div>
+            <div class="moment-time">${time}</div>
+          </div>
+        </div>
+        <div class="moment-content">${escapeHtml(m.content)}</div>
+        ${m.media_urls && m.media_urls.length > 0 ? `
+        <div class="moment-images">
+          ${m.media_urls.map((url, idx) => `
+            <img src="${url}" alt="图片${idx+1}" class="moment-img" onclick="event.stopPropagation();openLightbox('${url}')" loading="lazy">
+          `).join('')}
+        </div>
+        ` : ''}
+        <div class="moment-footer">
+          ${clientTag || `<span class="moment-vis-badge">${visLabel}</span>`}
+          <button class="${likeBtnClass}" onclick="toggleLike(${m.id}, this)" data-liked="${m.user_liked}">
+            ${likeIcon} <span class="like-count">${m.like_count}</span>
+          </button>
+          <button class="btn-comment" onclick="openComment(${m.id})">
+            💬 <span>${m.comment_count}</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  const d = new Date(t + (t.endsWith('Z') ? '' : 'Z'));
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+  if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+  return d.toLocaleDateString('zh-CN');
+}
+
+function setFilter(type, el) {
+  currentFilter = type;
+  document.querySelectorAll('.feed-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  currentPage = 1;
+  loadFeed(true);
+}
+
+function previewPostImages() {
+  const files = Array.from(document.getElementById('postImages').files);
+  if (files.length + pendingImages.length > 9) {
+    showToast('最多选择9张图片', 'error');
+    return;
+  }
+  pendingImages = [...pendingImages, ...files].slice(0, 9);
+  renderImagePreview();
+  document.getElementById('postImages').value = '';
+}
+
+function renderImagePreview() {
+  const container = document.getElementById('imagePreview');
+  container.innerHTML = pendingImages.map((file, i) => `
+    <div class="preview-thumb" style="background-image:url(${URL.createObjectURL(file)})">
+      <button class="remove-btn" onclick="removeImage(${i})">&times;</button>
+    </div>
+  `).join('');
+}
+
+function removeImage(idx) {
+  pendingImages.splice(idx, 1);
+  renderImagePreview();
+}
+
+async function uploadImages() {
+  if (pendingImages.length === 0) return [];
+  const formData = new FormData();
+  pendingImages.forEach(f => formData.append('files', f));
+  const res = await fetch('/api/upload/multiple', { method: 'POST', body: formData });
+  const data = await res.json();
+  if (data.ok) return data.urls;
+  return [];
+}
+
+function openLightbox(url) {
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightbox').style.display = 'flex';
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
+
+async function submitPost() {
+  const content = document.getElementById('postContent').value.trim();
+  if (!content && pendingImages.length === 0) { showToast('请输入内容或选择图片', 'error'); return; }
+
+  const btn = document.getElementById('postBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  try {
+    // Upload images first
+    let mediaUrls = [];
+    if (pendingImages.length > 0) {
+      mediaUrls = await uploadImages();
+    }
+
+    const type = document.getElementById('postType').value;
+    const visible_type = document.getElementById('postVisible').value;
+    const link_client_id = document.getElementById('postClient').value || null;
+
+    btn.textContent = '发布中...';
+    const res = await fetch('/api/v1/crm/moments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: content || '分享图片',
+        type, visible_type,
+        link_client_id: link_client_id ? parseInt(link_client_id) : null,
+        media_urls: JSON.stringify(mediaUrls),
+      }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      document.getElementById('postContent').value = '';
+      pendingImages = [];
+      renderImagePreview();
+      showToast('发布成功！');
+      loadFeed(true);
+    } else {
+      showToast(data.msg || '发布失败', 'error');
+    }
+  } catch (e) {
+    showToast('发布失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🚀 发布动态';
+  }
+}
+
+async function toggleLike(momentId, btn) {
+  try {
+    const res = await fetch(`/api/v1/crm/moments/${momentId}/like`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.ok) {
+      if (data.action === 'liked') {
+        btn.classList.add('liked');
+        btn.setAttribute('data-liked', 'true');
+        btn.innerHTML = '❤️ <span class="like-count">' + (parseInt(btn.querySelector('.like-count').textContent) + 1) + '</span>';
+      } else {
+        btn.classList.remove('liked');
+        btn.setAttribute('data-liked', 'false');
+        btn.innerHTML = '🤍 <span class="like-count">' + Math.max(0, parseInt(btn.querySelector('.like-count').textContent) - 1) + '</span>';
+      }
+    } else {
+      showToast(data.msg || '操作失败', 'error');
+    }
+  } catch (e) {
+    showToast('操作失败: ' + e.message, 'error');
+  }
+}
+
+async function openComment(momentId) {
+  currentMomentId = momentId;
+
+  // 加载该动态的评论
+  try {
+    const res = await fetch(`/api/v1/crm/moments?page=1&page_size=50`);
+    const data = await res.json();
+    const moment = data.items?.find(m => m.id === momentId);
+
+    const list = document.getElementById('commentList');
+    if (moment && moment.comments && moment.comments.length > 0) {
+      list.innerHTML = moment.comments.map(c => `
+        <div class="comment-item">
+          <span class="comment-user">${c.user_name}</span>
+          ${c.reply_to_user_name ? `<span class="comment-reply"> 回复 ${c.reply_to_user_name}</span>` : ''}
+          <div class="comment-text">${escapeHtml(c.comment_text)}</div>
+          <div class="comment-time">${formatTime(c.created_at)}</div>
+        </div>
+      `).join('');
+    } else {
+      list.innerHTML = '<p class="text-muted text-sm">暂无评论，快来抢沙发~</p>';
+    }
+
+    document.getElementById('commentModal').classList.add('show');
+    setTimeout(() => document.getElementById('commentInput').focus(), 100);
+  } catch (e) {
+    showToast('加载评论失败', 'error');
+  }
+}
+
+function closeCommentModal() {
+  document.getElementById('commentModal').classList.remove('show');
+  currentMomentId = null;
+  document.getElementById('commentInput').value = '';
+}
+
+async function submitComment() {
+  const text = document.getElementById('commentInput').value.trim();
+  if (!text || !currentMomentId) return;
+
+  try {
+    const res = await fetch(`/api/v1/crm/moments/${currentMomentId}/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment_text: text }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      document.getElementById('commentInput').value = '';
+      openComment(currentMomentId);
+      // 刷新feed以更新评论数
+      setTimeout(() => loadFeed(true), 500);
+    } else {
+      showToast(data.msg || '评论失败', 'error');
+    }
+  } catch (e) {
+    showToast('评论失败: ' + e.message, 'error');
+  }
+}
+
+function updateActiveUsers(items) {
+  const userMap = {};
+  items.forEach(m => {
+    const uid = m.user?.id;
+    if (!uid) return;
+    if (!userMap[uid]) userMap[uid] = { name: m.user?.name, count: 0 };
+    userMap[uid].count++;
+  });
+
+  const sorted = Object.values(userMap).sort((a, b) => b.count - a.count).slice(0, 5);
+  const container = document.getElementById('activeUsers');
+  if (sorted.length === 0) {
+    container.innerHTML = '<p class="text-muted text-sm">暂无数据</p>';
+    return;
+  }
+  container.innerHTML = sorted.map((u, i) => `
+    <div class="user-row">
+      <span class="user-dot"></span>
+      <span class="user-row-name">${u.name}</span>
+      <span class="user-row-count">${u.count}条动态</span>
+    </div>
+  `).join('');
+}
+
+// 点击弹窗遮罩关闭
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('commentModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCommentModal();
+  });
+  loadFeed(true);
+});
+</script>
+{% endblock %}

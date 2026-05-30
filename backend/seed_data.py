@@ -3,25 +3,45 @@ import sys, datetime
 sys.stdout.reconfigure(encoding='utf-8')
 from database import SessionLocal, engine, Base
 from models import (
-    Lead, Customer, Opportunity, Quotation, Order, TrackingEvent,
-    CreditInfo, ActivityLog, Complaint, FollowUp, ClaimRecord, SystemConfig,
+    Lead, Customer, Opportunity, Quotation, Inquiry, Order, TrackingEvent,
+    CreditInfo, ActivityLog, Complaint, FollowUp, ClaimRecord, SystemConfig, User,
+    Moment, MomentInteraction,
     STATUS_NEW, STATUS_CONTACTED, STATUS_DISQUALIFIED,
     STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING,
     STATUS_TRIAL, STATUS_ACTIVE, STATUS_RECEDING, STATUS_CHURNED,
     LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
 )
+import bcrypt
+import json
 
 
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
-    for tbl in [Complaint, TrackingEvent, Order, Quotation, Opportunity,
-                CreditInfo, ActivityLog, Customer, FollowUp, ClaimRecord, Lead, SystemConfig]:
+    for tbl in [Complaint, TrackingEvent, Order, Quotation, Inquiry, Opportunity,
+                CreditInfo, ActivityLog, Customer, FollowUp, ClaimRecord,
+                MomentInteraction, Moment, Lead, User, SystemConfig]:
         db.query(tbl).delete()
     db.commit()
 
     now = datetime.datetime.now
+
+    # ═══════════════════ 演示用户 ═══════════════════
+    demo_pw = bcrypt.hashpw("123456".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    users_data = [
+        User(username="13800138000", password_hash=demo_pw, name="张晓明",
+             phone="13800138000", role="sales", department_id=1),
+        User(username="13800138001", password_hash=demo_pw, name="陈总",
+             phone="13800138001", role="sales", department_id=1),
+        User(username="13800138002", password_hash=demo_pw, name="李强",
+             phone="13800138002", role="sales", department_id=2),
+        User(username="13800138003", password_hash=demo_pw, name="王芳",
+             phone="13800138003", role="admin", department_id=3),
+    ]
+    for u in users_data:
+        db.add(u)
+    db.commit()
 
     # ═══════════════════ 线索公海池 (潜客阶段: new/contacted/disqualified) ═══════════════════
     leads = [
@@ -205,6 +225,55 @@ def seed():
     db.add_all(quotations)
     db.commit()
 
+    # ═══════════════════ 询价单 ═══════════════════
+    inquiries = [
+        Inquiry(inquiry_no="INQ-20260531-001", customer_id=1,
+                company_name="深圳思科达电子有限公司", contact_name="陈总", contact_mobile="13800138001",
+                route_type="海派", cargo_mode="FCL", cargo_type="带电产品",
+                origin="深圳", destination="洛杉矶", container_type="40HQ", container_count=2,
+                weight_kg=18000, volume_cbm=58,
+                incoterms="FOB", expected_delivery="2026-06-15",
+                customs_needed=1, clearance_needed=1, delivery_needed=1,
+                notes="美森限时达优先，客户要求6月中旬前到仓",
+                status="pricing", created_by=1, created_by_name="张晓明",
+                urged_at=datetime.datetime.now()),
+        Inquiry(inquiry_no="INQ-20260530-002", customer_id=2,
+                company_name="广州恒通服装贸易有限公司", contact_name="李经理", contact_mobile="13800138002",
+                route_type="空派", cargo_mode="LCL", cargo_type="纺织品",
+                origin="广州", destination="阿姆斯特丹", pieces=50, weight_kg=350, volume_cbm=2.1,
+                incoterms="FCA", expected_delivery="2026-06-08",
+                customs_needed=1, clearance_needed=0, delivery_needed=1,
+                notes="快件时效优先，成本其次",
+                status="pricing", created_by=1, created_by_name="张晓明"),
+        Inquiry(inquiry_no="INQ-20260530-003", customer_id=3,
+                company_name="宁波博源电子股份有限公司", contact_name="王总", contact_mobile="13800138003",
+                route_type="海派", cargo_mode="LCL", cargo_type="普货",
+                origin="宁波", destination="鹿特丹", pieces=200, weight_kg=1200, volume_cbm=5.5,
+                incoterms="DDP", expected_delivery="2026-07-01",
+                customs_needed=1, clearance_needed=1, delivery_needed=1,
+                notes="",
+                status="priced", created_by=1, created_by_name="张晓明"),
+        Inquiry(inquiry_no="INQ-20260528-004", customer_id=4,
+                company_name="华远供应链(深圳)", contact_name="赵经理", contact_mobile="13800138004",
+                route_type="铁运", cargo_mode="FCL", cargo_type="重货",
+                origin="义乌", destination="汉堡", container_type="40GP", container_count=1,
+                weight_kg=22000, volume_cbm=55,
+                incoterms="CIF", expected_delivery="2026-07-15",
+                customs_needed=1, clearance_needed=1, delivery_needed=0,
+                notes="中欧班列线路",
+                status="pricing", created_by=2, created_by_name="陈总"),
+        Inquiry(inquiry_no="INQ-20260525-005", customer_id=5,
+                company_name="深圳市华盛物流有限公司", contact_name="刘经理", contact_mobile="13800138005",
+                route_type="卡航", cargo_mode="LCL", cargo_type="敏感品",
+                origin="深圳", destination="河内", pieces=30, weight_kg=200, volume_cbm=1.2,
+                incoterms="FOB", expected_delivery="2026-06-05",
+                customs_needed=1, clearance_needed=0, delivery_needed=1,
+                notes="越南陆运，需了解税费",
+                status="pricing", created_by=1, created_by_name="张晓明"),
+    ]
+    db.add_all(inquiries)
+    db.commit()
+
     # ═══════════════════ 运单 ═══════════════════
     orders = [
         Order(customer_id=1, tracking_number="SCD202605001US",
@@ -240,6 +309,19 @@ def seed():
               weight_kg=120.0, volume_cbm=0.8, status="departed",
               origin="广州白云机场", destination="阿姆斯特丹",
               etd=datetime.date(2026, 5, 7), eta=datetime.date(2026, 5, 10)),
+        # 异常单
+        Order(customer_id=1, tracking_number="SCD202605002US",
+              route_detail="深圳-美森-芝加哥FBA仓", cargo_desc="充电器x800件",
+              weight_kg=2300.0, volume_cbm=14.0, container_count=1, status="customs",
+              origin="深圳盐田港", destination="芝加哥",
+              etd=datetime.date(2026, 5, 1), eta=datetime.date(2026, 5, 20),
+              has_exception=True, exception_type="海关查验"),
+        Order(customer_id=4, tracking_number="ADE202605002DE",
+              route_detail="义乌-铁运-杜伊斯堡", cargo_desc="日用品混装",
+              weight_kg=4500.0, volume_cbm=28.0, container_count=1, status="transit",
+              origin="义乌铁路口岸", destination="杜伊斯堡",
+              etd=datetime.date(2026, 5, 5), eta=datetime.date(2026, 6, 5),
+              has_exception=True, exception_type="船期延误"),
     ]
     db.add_all(orders)
     db.commit()
@@ -267,6 +349,32 @@ def seed():
         TrackingEvent(order_id=4, event_type="delivery", location="汉堡FBA仓",
                       description="货物已成功递送FBA仓库，签收完成",
                       event_time=datetime.datetime(2026, 5, 5, 15, 0)),
+        # Order 7 - exception: customs exam
+        TrackingEvent(order_id=7, event_type="warehouse", location="深圳仓",
+                      description="货物入仓，完成称重和贴标",
+                      event_time=datetime.datetime(2026, 4, 28, 10, 0)),
+        TrackingEvent(order_id=7, event_type="departure", location="深圳盐田港",
+                      description="集装箱已装船，美森限时达 预计5月20日抵达芝加哥",
+                      event_time=datetime.datetime(2026, 5, 1, 6, 0)),
+        TrackingEvent(order_id=7, event_type="arrival", location="洛杉矶港 [美西时间 PST]",
+                      description="船只抵达洛杉矶港锚地，等待靠泊",
+                      event_time=datetime.datetime(2026, 5, 26, 3, 0)),
+        TrackingEvent(order_id=7, event_type="customs", location="洛杉矶海关 [美西时间 PST]",
+                      description="目的港海关申报已完成，已放行",
+                      event_time=datetime.datetime(2026, 5, 28, 10, 0)),
+        TrackingEvent(order_id=7, event_type="exception", location="洛杉矶港 [美西时间 PST]",
+                      description="该柜被美国海关CBP抽中CET查验，预计延误7-14天，需等待二次开箱检查通知",
+                      event_time=datetime.datetime(2026, 5, 30, 14, 0)),
+        # Order 8 - exception: vessel delay
+        TrackingEvent(order_id=8, event_type="warehouse", location="义乌仓",
+                      description="货物已入仓，等待装柜",
+                      event_time=datetime.datetime(2026, 4, 30, 15, 0)),
+        TrackingEvent(order_id=8, event_type="departure", location="义乌铁路口岸",
+                      description="班列已发车，经由阿拉山口出境前往杜伊斯堡",
+                      event_time=datetime.datetime(2026, 5, 5, 20, 0)),
+        TrackingEvent(order_id=8, event_type="exception", location="阿拉山口 [北京时间 CST]",
+                      description="班列因境外铁路拥堵预计延误3-5天，当前停靠阿拉山口等待调度",
+                      event_time=datetime.datetime(2026, 5, 25, 8, 0)),
     ]
     db.add_all(tracking_events)
     db.commit()
@@ -355,6 +463,114 @@ def seed():
     db.add_all(follow_ups)
     db.commit()
 
+    # ═══════════════════ 企业朋友圈 ═══════════════════
+    IMG_BASE = "/static/uploads"
+    moments_data = [
+        Moment(
+            user_id=1, type="SYSTEM_KPI",
+            content="📊 5月团队战报：本周新签客户3家，运单量环比增长12%，美森线满载率92%！再接再厉！",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_chart5.jpg", f"{IMG_BASE}/moment_team2.jpg"]),
+            visible_type="DEPT", visible_target=json.dumps([1]),
+            created_at=now() - datetime.timedelta(hours=2),
+        ),
+        Moment(
+            user_id=2, type="ACTIVITY",
+            content="🎉 恭喜签约！思科达电子确认Q3美森快船月度包舱，预计月出货量500方以上，感谢客户信任！感受一下签约现场的激动时刻～🤝",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_sign8.jpg", f"{IMG_BASE}/moment_office1.jpg"]),
+            visible_type="ALL", visible_target=None,
+            link_client_id=1,
+            created_at=now() - datetime.timedelta(hours=5),
+        ),
+        Moment(
+            user_id=1, type="DAILY",
+            content="今天拜访了富通国际，客户对新增的东南亚线很感兴趣。下周安排具体报价方案，争取Q3前锁定合作。附上拜访途中的风景～",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_office6.jpg"]),
+            visible_type="ALL", visible_target=None,
+            created_at=now() - datetime.timedelta(hours=8),
+        ),
+        Moment(
+            user_id=3, type="ACTIVITY",
+            content="🚢 盐田-鹿特丹线本周成功首航！感谢运营团队的全力配合，客户反馈时效满意度提升明显。来看看码头装柜的现场照片！",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_warehouse7.jpg", f"{IMG_BASE}/moment_cargo3.jpg"]),
+            visible_type="DEPT", visible_target=json.dumps([2]),
+            created_at=now() - datetime.timedelta(days=1),
+        ),
+        Moment(
+            user_id=4, type="SYSTEM_KPI",
+            content="📈 运营月报：5月整体准点率96.8%，异常率降至2.1%，客户投诉同比下降40%。继续保持！",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_chart5.jpg"]),
+            visible_type="ALL", visible_target=None,
+            created_at=now() - datetime.timedelta(days=1, hours=3),
+        ),
+        Moment(
+            user_id=1, type="DAILY",
+            content="今天学习了纷享销客ShareAI的新功能——AI销售总监可以自动生成客户洞察报告，对日常跟进很有帮助。推荐大家都试试！",
+            visible_type="ALL", visible_target=None,
+            created_at=now() - datetime.timedelta(days=2),
+        ),
+        Moment(
+            user_id=2, type="DAILY",
+            content="遇到一个有意思的案例：客户原本走空派，经过成本分析后改走中欧班列，运费节省40%，时效只慢3天。跨境物流方案优化真的很重要！",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_cargo3.jpg"]),
+            visible_type="DEPT", visible_target=json.dumps([1]),
+            created_at=now() - datetime.timedelta(days=3),
+        ),
+        Moment(
+            user_id=3, type="ACTIVITY",
+            content="🏆 本周销售冠军：李强！成功开发2家新客户，月度新增营收预估超80万。向他学习！团队开会时拍的合影～",
+            media_urls=json.dumps([f"{IMG_BASE}/moment_team2.jpg", f"{IMG_BASE}/moment_meeting4.jpg", f"{IMG_BASE}/moment_office1.jpg"]),
+            visible_type="ALL", visible_target=None,
+            created_at=now() - datetime.timedelta(days=4),
+        ),
+    ]
+    db.add_all(moments_data)
+    db.flush()
+
+    # 朋友圈互动（点赞 + 评论）
+    interactions = [
+        # KPI战报的互动
+        MomentInteraction(moment_id=1, user_id=2, interact_type="LIKE"),
+        MomentInteraction(moment_id=1, user_id=3, interact_type="LIKE"),
+        MomentInteraction(moment_id=1, user_id=4, interact_type="LIKE"),
+        MomentInteraction(moment_id=1, user_id=2, interact_type="COMMENT", comment_text="团队努力！继续加油💪"),
+        MomentInteraction(moment_id=1, user_id=1, interact_type="COMMENT", comment_text="大家一起努力，争取6月再创新高！", reply_to_user_id=2),
+        # 签约喜报的互动
+        MomentInteraction(moment_id=2, user_id=1, interact_type="LIKE"),
+        MomentInteraction(moment_id=2, user_id=3, interact_type="LIKE"),
+        MomentInteraction(moment_id=2, user_id=4, interact_type="LIKE"),
+        MomentInteraction(moment_id=2, user_id=1, interact_type="COMMENT", comment_text="恭喜陈总！思科达是我们标杆客户"),
+        MomentInteraction(moment_id=2, user_id=3, interact_type="COMMENT", comment_text="太厉害了！向你学习"),
+        # 日常分享互动
+        MomentInteraction(moment_id=3, user_id=2, interact_type="LIKE"),
+        MomentInteraction(moment_id=3, user_id=4, interact_type="LIKE"),
+        MomentInteraction(moment_id=3, user_id=2, interact_type="COMMENT", comment_text="东南亚线确实是新增长点，一起推进"),
+        # 首航喜报互动
+        MomentInteraction(moment_id=4, user_id=1, interact_type="LIKE"),
+        MomentInteraction(moment_id=4, user_id=4, interact_type="LIKE"),
+        MomentInteraction(moment_id=4, user_id=1, interact_type="COMMENT", comment_text="祝贺运营团队！鹿特丹线一直是我们重点线路"),
+        # 运营月报互动
+        MomentInteraction(moment_id=5, user_id=1, interact_type="LIKE"),
+        MomentInteraction(moment_id=5, user_id=2, interact_type="LIKE"),
+        MomentInteraction(moment_id=5, user_id=3, interact_type="LIKE"),
+        MomentInteraction(moment_id=5, user_id=1, interact_type="COMMENT", comment_text="数据说话的运营团队，赞👍"),
+        # 日常分享互动
+        MomentInteraction(moment_id=6, user_id=2, interact_type="LIKE"),
+        MomentInteraction(moment_id=6, user_id=3, interact_type="LIKE"),
+        MomentInteraction(moment_id=6, user_id=4, interact_type="COMMENT", comment_text="ShareAI确实好用，我也在学"),
+        # 案例分享互动
+        MomentInteraction(moment_id=7, user_id=1, interact_type="LIKE"),
+        MomentInteraction(moment_id=7, user_id=3, interact_type="LIKE"),
+        MomentInteraction(moment_id=7, user_id=1, interact_type="COMMENT", comment_text="方案优化是销售的基本功，值得分享"),
+        # 销冠喜报互动
+        MomentInteraction(moment_id=8, user_id=1, interact_type="LIKE"),
+        MomentInteraction(moment_id=8, user_id=2, interact_type="LIKE"),
+        MomentInteraction(moment_id=8, user_id=4, interact_type="LIKE"),
+        MomentInteraction(moment_id=8, user_id=2, interact_type="COMMENT", comment_text="向李强学习！"),
+        MomentInteraction(moment_id=8, user_id=3, interact_type="COMMENT", comment_text="谢谢大家，继续努力！"),
+    ]
+    db.add_all(interactions)
+    db.commit()
+
     print("✅ 演示数据已填充完成！")
     print(f"  线索: {len(leads)} 条 (含1条无效)")
     print(f"  客户: {len(customers)} 家 (覆盖7个生命周期阶段)")
@@ -365,6 +581,7 @@ def seed():
     print(f"  授信记录: {len(credits)} 条")
     print(f"  跟进记录: {len(activities)} 条 (含状态流转)")
     print(f"  投诉: {len(complaints)} 个")
+    print(f"  朋友圈: {len(moments_data)} 条动态 + {len(interactions)} 条互动")
     db.close()
 
 
