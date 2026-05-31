@@ -220,6 +220,7 @@ class User(Base):
     name = Column(String(100))
     phone = Column(String(30))
     role = Column(String(20), default="sales", comment="sales/admin")
+    department_id = Column(Integer, default=1)
     created_at = Column(DateTime, default=_now)
 
 
@@ -389,4 +390,62 @@ class Complaint(Base):
     claim_amount = Column(Float, default=0)
     status = Column(String(20), default="open", comment="open/investigating/resolved/closed")
     resolution = Column(Text)
+    created_at = Column(DateTime, default=_now)
+
+
+# ── 9. 询价单 ──
+class Inquiry(Base):
+    __tablename__ = "inquiries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    inquiry_no = Column(String(50), unique=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    company_name = Column(String(200))
+    contact_name = Column(String(100))
+    contact_mobile = Column(String(30))
+    route_type = Column(String(20), comment="海派/空派/铁运/卡航")
+    cargo_mode = Column(String(10), comment="FCL/LCL")
+    cargo_type = Column(String(100), comment="普货/带电产品/纺织品/重货/敏感品")
+    origin = Column(String(100))
+    destination = Column(String(100))
+    container_type = Column(String(20))
+    container_count = Column(Integer, default=0)
+    pieces = Column(Integer, default=0)
+    weight_kg = Column(Float, default=0)
+    volume_cbm = Column(Float, default=0)
+    incoterms = Column(String(10))
+    expected_delivery = Column(String(30))
+    customs_needed = Column(Integer, default=1)
+    clearance_needed = Column(Integer, default=0)
+    delivery_needed = Column(Integer, default=0)
+    notes = Column(Text)
+    status = Column(String(20), default="pricing", comment="pricing/priced/expired")
+    created_by = Column(Integer)
+    created_by_name = Column(String(100))
+    urged_at = Column(DateTime)
+    created_at = Column(DateTime, default=_now)
+
+
+# ── 10. 企业朋友圈动态 ──
+class Moment(Base):
+    __tablename__ = "moments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(String(20), comment="SYSTEM_KPI/ACTIVITY/DAILY")
+    content = Column(Text)
+    media_urls = Column(Text, comment="图片附件JSON数组")
+    visible_type = Column(String(10), default="ALL", comment="ALL/DEPT")
+    visible_target = Column(Text, comment="可见部门JSON数组")
+    link_client_id = Column(Integer, comment="关联客户ID")
+    created_at = Column(DateTime, default=_now)
+
+
+# ── 11. 朋友圈互动 ──
+class MomentInteraction(Base):
+    __tablename__ = "moment_interactions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moment_id = Column(Integer, ForeignKey("moments.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    interact_type = Column(String(10), comment="LIKE/COMMENT")
+    comment_text = Column(Text)
+    reply_to_user_id = Column(Integer)
     created_at = Column(DateTime, default=_now)

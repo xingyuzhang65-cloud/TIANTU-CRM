@@ -19,9 +19,10 @@ from sqlalchemy import func, desc, or_
 
 from database import engine, Base, get_db, SessionLocal
 from models import (
-    Lead, Customer, Opportunity, Quotation, Order,
-    TrackingEvent, CreditInfo, ActivityLog, Complaint,
+    Lead, Customer, Opportunity, Quotation, Inquiry, Order, TrackingEvent,
+    CreditInfo, ActivityLog, Complaint,
     FollowUp, ClaimRecord, SystemConfig, User,
+    Moment, MomentInteraction,
     ALL_STATUSES, STATUS_LABELS, TRANSITION_REQUIREMENTS,
     STATUS_NEW,
     LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
@@ -1699,6 +1700,379 @@ def api_quotations_list(db: Session = Depends(get_db)):
             "created_at": str(q.created_at),
         } for q in quotes],
     }
+
+
+# ═══════════════════════════════════════════════
+# 页面路由 - 企业朋友圈
+# ═══════════════════════════════════════════════
+
+@app.get("/moments", response_class=HTMLResponse)
+def page_moments(request: Request, db: Session = Depends(get_db)):
+    return render("moments.html", request, active_page="moments")
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 询价单管理
+# ═══════════════════════════════════════════════
+
+@app.get("/api/inquiries/list")
+def api_inquiries_list(
+    status: str = Query(None),
+    keyword: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """询价列表"""
+    q = db.query(Inquiry)
+    if status and status != "all":
+        q = q.filter(Inquiry.status == status)
+    if keyword:
+        kw = f"%{keyword}%"
+        q = q.filter(
+            Inquiry.company_name.ilike(kw) | Inquiry.inquiry_no.ilike(kw)
+        )
+    inquiries = q.order_by(desc(Inquiry.created_at)).all()
+    status_map = {"pricing": "核价中", "priced": "已出价", "closed": "已关闭"}
+    return {
+        "ok": True,
+        "inquiries": [{
+            "id": i.id, "inquiry_no": i.inquiry_no,
+            "company_name": i.company_name, "contact_name": i.contact_name,
+            "contact_mobile": i.contact_mobile, "route_type": i.route_type,
+            "cargo_mode": i.cargo_mode, "cargo_type": i.cargo_type,
+            "origin": i.origin, "destination": i.destination,
+            "container_type": i.container_type, "container_count": i.container_count,
+            "pieces": i.pieces, "weight_kg": i.weight_kg, "volume_cbm": i.volume_cbm,
+            "incoterms": i.incoterms, "expected_delivery": i.expected_delivery,
+            "customs_needed": i.customs_needed, "clearance_needed": i.clearance_needed,
+            "delivery_needed": i.delivery_needed, "notes": i.notes,
+            "status": i.status, "status_label": status_map.get(i.status, i.status),
+            "created_by": i.created_by, "created_by_name": i.created_by_name,
+            "urged_at": str(i.urged_at) if i.urged_at else None,
+            "created_at": str(i.created_at),
+        } for i in inquiries],
+        "total": len(inquiries),
+    }
+
+
+class InquiryCreateData(BaseModel):
+    company_name: str = ""
+    contact_name: str = ""
+    contact_mobile: str = ""
+    route_type: str = "海派"
+    cargo_mode: str = "LCL"
+    cargo_type: str = "普货"
+    origin: str = ""
+    destination: str = ""
+    delivery_address: str = ""
+    container_type: str = "40HQ"
+    container_count: int = 1
+    pieces: int = 0
+    weight_kg: str = ""
+    volume_cbm: str = ""
+    incoterms: str = "FOB"
+    expected_delivery: str = ""
+    customs_needed: int = 1
+    clearance_needed: int = 1
+    delivery_needed: int = 1
+    notes: str = ""
+
+
+@app.post("/api/inquiries/create")
+def api_inquiry_create(data: InquiryCreateData, db: Session = Depends(get_db)):
+    """创建询价单"""
+    company_name = (data.company_name or "").strip()
+    if not company_name:
+        return JSONResponse({"ok": False, "msg": "请输入客户名称"}, 400)
+
+    import random
+    today_str = datetime.date.today().strftime("%Y%m%d")
+    seq = random.randint(1, 999)
+    inquiry_no = f"INQ-{today_str}-{seq:03d}"
+
+    w = 0.0
+    v = 0.0
+    try:
+        w = float(data.weight_kg) if data.weight_kg else 0.0
+    except: pass
+    try:
+        v = float(data.volume_cbm) if data.volume_cbm else 0.0
+    except: pass
+
+    inquiry = Inquiry(
+        inquiry_no=inquiry_no, company_name=company_name,
+        contact_name=data.contact_name, contact_mobile=data.contact_mobile,
+        route_type=data.route_type, cargo_mode=data.cargo_mode,
+        cargo_type=data.cargo_type, origin=data.origin,
+        destination=data.destination,
+        container_type=data.container_type if data.cargo_mode == "FCL" else None,
+        container_count=data.container_count if data.cargo_mode == "FCL" else 0,
+        pieces=data.pieces, weight_kg=w, volume_cbm=v,
+        incoterms=data.incoterms,
+        expected_delivery=data.expected_delivery or None,
+        customs_needed=data.customs_needed,
+        clearance_needed=data.clearance_needed,
+        delivery_needed=data.delivery_needed,
+        notes=data.notes, status="pricing",
+        created_by=1, created_by_name="张晓明",
+    )
+    db.add(inquiry)
+    db.commit()
+    db.refresh(inquiry)
+    return {"ok": True, "msg": "询价已提交", "inquiry_id": inquiry.id, "inquiry_no": inquiry_no}
+
+
+@app.post("/api/inquiries/{inquiry_id}/urge")
+def api_inquiry_urge(inquiry_id: int, db: Session = Depends(get_db)):
+    """催办询价"""
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id).first()
+    if not inquiry:
+        return JSONResponse({"ok": False, "msg": "询价单不存在"}, 404)
+    inquiry.urged_at = _now()
+    db.commit()
+    return {"ok": True, "msg": "已催办，商务人员将尽快处理"}
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 企业朋友圈
+# ═══════════════════════════════════════════════
+
+@app.get("/api/v1/crm/moments")
+def api_moments_list(
+    page: int = Query(1),
+    page_size: int = Query(10),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """朋友圈列表"""
+    q = db.query(Moment).order_by(desc(Moment.created_at))
+    total = q.count()
+    moments = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    items = []
+    user_id = current_user.id if current_user else 1
+    for m in moments:
+        author = db.query(User).filter(User.id == m.user_id).first()
+        likes = db.query(MomentInteraction).filter(
+            MomentInteraction.moment_id == m.id,
+            MomentInteraction.interact_type == "LIKE",
+        ).count()
+        user_liked = db.query(MomentInteraction).filter(
+            MomentInteraction.moment_id == m.id,
+            MomentInteraction.user_id == user_id,
+            MomentInteraction.interact_type == "LIKE",
+        ).first() is not None
+        comments = db.query(MomentInteraction).filter(
+            MomentInteraction.moment_id == m.id,
+            MomentInteraction.interact_type == "COMMENT",
+        ).order_by(MomentInteraction.created_at).all()
+
+        # Parse media_urls JSON string
+        media_list = []
+        if m.media_urls:
+            try:
+                media_list = json.loads(m.media_urls)
+            except:
+                media_list = [m.media_urls]
+
+        # Link client info
+        link_client = None
+        if m.link_client_id:
+            client_obj = db.query(Customer).filter(Customer.id == m.link_client_id).first()
+            if client_obj:
+                link_client = {"id": client_obj.id, "company_name": client_obj.company_name}
+
+        items.append({
+            "id": m.id,
+            "user_id": m.user_id,
+            "user": {"id": author.id, "name": author.name, "phone": author.phone} if author else None,
+            "type": m.type,
+            "content": m.content,
+            "media_urls": media_list,
+            "visible_type": m.visible_type,
+            "visible_target": json.loads(m.visible_target) if m.visible_target else None,
+            "link_client_id": m.link_client_id,
+            "link_client": link_client,
+            "created_at": str(m.created_at),
+            "like_count": likes,
+            "user_liked": user_liked,
+            "comments": [{
+                "id": c.id, "user_id": c.user_id,
+                "user_name": db.query(User).filter(User.id == c.user_id).first().name if db.query(User).filter(User.id == c.user_id).first() else "",
+                "comment_text": c.comment_text,
+                "reply_to_user_id": c.reply_to_user_id,
+                "created_at": str(c.created_at),
+            } for c in comments],
+        })
+
+    return {
+        "ok": True,
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": (page * page_size) < total,
+    }
+
+
+class MomentCreateData(BaseModel):
+    content: str = ""
+    type: str = "DAILY"
+    media_urls: list = []
+    visible_type: str = "ALL"
+    visible_target: list = []
+    link_client_id: int = 0
+
+
+@app.post("/api/v1/crm/moments")
+def api_moments_create(
+    data: MomentCreateData,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """发布朋友圈动态"""
+    if not current_user:
+        return JSONResponse({"ok": False, "msg": "请先登录"}, 401)
+    uid = current_user.id
+    moment = Moment(
+        user_id=uid,
+        type=data.type or "DAILY",
+        content=data.content,
+        media_urls=json.dumps(data.media_urls) if data.media_urls else None,
+        visible_type=data.visible_type or "ALL",
+        visible_target=json.dumps(data.visible_target) if data.visible_target else None,
+        link_client_id=data.link_client_id if data.link_client_id else None,
+    )
+    db.add(moment)
+    db.commit()
+    db.refresh(moment)
+    return {"ok": True, "moment": {"id": moment.id}, "msg": "发布成功"}
+
+
+@app.post("/api/v1/crm/moments/{moment_id}/like")
+def api_moments_like(
+    moment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """点赞/取消点赞"""
+    if not current_user:
+        return JSONResponse({"ok": False, "msg": "请先登录"}, 401)
+    uid = current_user.id
+    existing = db.query(MomentInteraction).filter(
+        MomentInteraction.moment_id == moment_id,
+        MomentInteraction.user_id == uid,
+        MomentInteraction.interact_type == "LIKE",
+    ).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"ok": True, "action": "unliked"}
+    like = MomentInteraction(
+        moment_id=moment_id, user_id=uid, interact_type="LIKE",
+    )
+    db.add(like)
+    db.commit()
+    return {"ok": True, "action": "liked"}
+
+
+class CommentData(BaseModel):
+    text: str = ""
+    reply_to_user_id: int = 0
+
+
+@app.post("/api/v1/crm/moments/{moment_id}/comment")
+def api_moments_comment(
+    moment_id: int,
+    data: CommentData,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """评论朋友圈"""
+    if not current_user:
+        return JSONResponse({"ok": False, "msg": "请先登录"}, 401)
+    uid = current_user.id
+    comment = MomentInteraction(
+        moment_id=moment_id, user_id=uid,
+        interact_type="COMMENT", comment_text=data.text,
+        reply_to_user_id=data.reply_to_user_id if data.reply_to_user_id else None,
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return {"ok": True, "comment": {
+        "id": comment.id, "user_id": uid,
+        "user_name": current_user.name,
+        "comment_text": comment.comment_text,
+        "created_at": str(comment.created_at),
+    }}
+
+
+# ═══════════════════════════════════════════════
+# API 路由 - 运单异常 & 订阅
+# ═══════════════════════════════════════════════
+
+@app.get("/api/orders/exceptions")
+def api_orders_exceptions(db: Session = Depends(get_db)):
+    """异常运单列表"""
+    exc_orders = db.query(Order).filter(
+        Order.has_exception == True
+    ).order_by(desc(Order.created_at)).all()
+
+    severe_count = 0
+    warning_count = 0
+    result = []
+    for o in exc_orders:
+        if o.exception_type and "海关" in o.exception_type:
+            severe_count += 1
+            severity = "severe"
+        else:
+            warning_count += 1
+            severity = "warning"
+
+        latest = db.query(TrackingEvent).filter(
+            TrackingEvent.order_id == o.id
+        ).order_by(desc(TrackingEvent.event_time)).first()
+
+        result.append({
+            "id": o.id, "tracking_number": o.tracking_number,
+            "route_detail": o.route_detail, "cargo_desc": o.cargo_desc,
+            "status": o.status, "status_label": o.status,
+            "exception_type": o.exception_type,
+            "severity": severity,
+            "customer_name": o.customer.company_name if o.customer else "",
+            "origin": o.origin, "destination": o.destination,
+            "etd": str(o.etd) if o.etd else None,
+            "eta": str(o.eta) if o.eta else None,
+            "latest_event": latest.description if latest else None,
+            "created_at": str(o.created_at),
+        })
+
+    return {
+        "ok": True,
+        "exceptions": result,
+        "stats": {"severe": severe_count, "warning": warning_count},
+        "total": len(result),
+    }
+
+
+@app.post("/api/orders/{order_id}/subscribe")
+def api_orders_subscribe(order_id: int, db: Session = Depends(get_db)):
+    """订阅运单更新"""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "msg": "运单不存在"}, 404)
+    return {"ok": True, "msg": "已订阅，关键节点将推送通知", "order_id": order_id}
+
+
+@app.post("/api/upload/multiple")
+async def api_upload_multiple(files: list = None):
+    """上传多张图片（Mock实现，返回占位URL）"""
+    import uuid
+    urls = []
+    if files:
+        for _ in files:
+            urls.append(f"/static/uploads/moment_team2.jpg")
+    return {"ok": True, "urls": urls if urls else ["/static/uploads/moment_team2.jpg"]}
 
 
 # ═══════════════════════════════════════════════
