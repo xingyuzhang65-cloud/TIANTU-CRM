@@ -117,55 +117,113 @@ def seed():
              reclaim_deadline=None, converted_at=now(), converted_to_type="customer"),
     ]
     db.add_all(leads)
+    db.flush()
+
+    # ═══════════════════ 线索跟进记录 (历史数据) ═══════════════════
+    lead_follows = [
+        # 线索1: 思科达电子 (follow_count=5)
+        FollowUp(lead_id=1, status="新建", content=f"{(now()-datetime.timedelta(days=30)).strftime('%m月%d日 %H:%M')} 新建了线索「深圳思科达电子有限公司」", created_by="张晓明", created_at=now()-datetime.timedelta(days=30)),
+        FollowUp(lead_id=1, status="初步沟通", content="电话沟通了解客户需求，客户做亚马逊FBA，月出货量约30方，对时效要求高，推荐美森快船线", created_by="张晓明", created_at=now()-datetime.timedelta(days=25)),
+        FollowUp(lead_id=1, status="初步沟通", content="发送公司介绍和美森线报价方案，客户表示与其他家比较中", created_by="张晓明", created_at=now()-datetime.timedelta(days=18)),
+        FollowUp(lead_id=1, status="意向强烈", content="客户确认试单，首批500kg带电产品走美森线到洛杉矶仓", created_by="张晓明", created_at=now()-datetime.timedelta(days=10)),
+        FollowUp(lead_id=1, status="意向强烈", content="试单签收完成，客户非常满意时效，确认转为长期合作，月出货量预期40方+", created_by="张晓明", created_at=now()-datetime.timedelta(days=3)),
+
+        # 线索2: 恒通服装 (follow_count=0, 已逾期)
+        FollowUp(lead_id=2, status="新建", content=f"{(now()-datetime.timedelta(days=14)).strftime('%m月%d日 %H:%M')} 新建了线索「广州恒通服装贸易有限公司」", created_by="张晓明", created_at=now()-datetime.timedelta(days=14)),
+
+        # 线索3: 欧凯进出口 (follow_count=4)
+        FollowUp(lead_id=3, status="新建", content=f"{(now()-datetime.timedelta(days=45)).strftime('%m月%d日 %H:%M')} 新建了线索「义乌欧凯进出口有限公司」", created_by="李强", created_at=now()-datetime.timedelta(days=45)),
+        FollowUp(lead_id=3, status="初步沟通", content="客户从义乌市场采购小商品，现有物流合作伙伴服务不满意，寻求替代方案", created_by="李强", created_at=now()-datetime.timedelta(days=40)),
+        FollowUp(lead_id=3, status="初步沟通", content="提供中欧班列拼柜方案，对比现有物流可节省约15%成本", created_by="李强", created_at=now()-datetime.timedelta(days=30)),
+        FollowUp(lead_id=3, status="意向强烈", content="客户确认Q3开始合作，首批3个柜测试中欧班列义乌→杜伊斯堡", created_by="李强", created_at=now()-datetime.timedelta(days=5)),
+
+        # 线索4: 锐思科技 (公海)
+        FollowUp(lead_id=4, status="新建", content=f"{(now()-datetime.timedelta(days=20)).strftime('%m月%d日 %H:%M')} 新建了线索「杭州锐思科技有限公司」", created_by="系统", created_at=now()-datetime.timedelta(days=20)),
+
+        # 线索5: 联达塑胶 (公海)
+        FollowUp(lead_id=5, status="新建", content=f"{(now()-datetime.timedelta(days=60)).strftime('%m月%d日 %H:%M')} 新建了线索「东莞联达塑胶制品有限公司」", created_by="系统", created_at=now()-datetime.timedelta(days=60)),
+
+        # 线索6: 宁波远洋 (follow_count=8)
+        FollowUp(lead_id=6, status="新建", content=f"{(now()-datetime.timedelta(days=90)).strftime('%m月%d日 %H:%M')} 新建了线索「宁波远洋国际贸易有限公司」", created_by="张晓明", created_at=now()-datetime.timedelta(days=90)),
+        FollowUp(lead_id=6, status="初步沟通", content="宁波远洋是大型贸易公司，主要出口机械设备到欧美，货量大但频次低", created_by="张晓明", created_at=now()-datetime.timedelta(days=85)),
+        FollowUp(lead_id=6, status="初步沟通", content="客户对DDP服务有需求，特别是欧洲线门到门服务", created_by="张晓明", created_at=now()-datetime.timedelta(days=75)),
+        FollowUp(lead_id=6, status="意向强烈", content="提供盐田→洛杉矶和上海→鹿特丹两条线路的DDP报价", created_by="张晓明", created_at=now()-datetime.timedelta(days=60)),
+        FollowUp(lead_id=6, status="意向强烈", content="客户对洛杉矶线报价满意，确认试单一个40HQ柜", created_by="张晓明", created_at=now()-datetime.timedelta(days=45)),
+        FollowUp(lead_id=6, status="意向强烈", content="试单顺利完成，客户讨论季度包柜方案", created_by="张晓明", created_at=now()-datetime.timedelta(days=20)),
+        FollowUp(lead_id=6, status="初步沟通", content="发送Q3季度包柜报价，讨论鹿特丹线加开方案", created_by="张晓明", created_at=now()-datetime.timedelta(days=8)),
+        FollowUp(lead_id=6, status="意向强烈", content="客户邮件确认Q3两个航线各月2个HQ柜，正在走合同流程", created_by="张晓明", created_at=now()-datetime.timedelta(days=2)),
+
+        # 线索7: AmazonSeller-DE (公海)
+        FollowUp(lead_id=7, status="新建", content=f"{(now()-datetime.timedelta(days=10)).strftime('%m月%d日 %H:%M')} 新建了线索「AmazonSeller-DE GmbH」", created_by="系统", created_at=now()-datetime.timedelta(days=10)),
+
+        # 线索8: 同行-快运通 (已转化)
+        FollowUp(lead_id=8, status="新建", content=f"{(now()-datetime.timedelta(days=120)).strftime('%m月%d日 %H:%M')} 新建了线索「同行-深圳快运通」", created_by="李强", created_at=now()-datetime.timedelta(days=120)),
+        FollowUp(lead_id=8, status="初步沟通", content="同行客户，主要做中东市场，希望合作互补", created_by="李强", created_at=now()-datetime.timedelta(days=115)),
+    ]
+    db.add_all(lead_follows)
     db.commit()
 
     # ═══════════════════ 客户 (生命周期各阶段) ═══════════════════
     customers = [
         Customer(lead_id=1, company_name="深圳思科达电子有限公司", contact_name="陈总",
                  phone="13800138001", email="chen@scd-tech.cn", country="中国",
-                 main_category="带电产品(电池)", shipping_frequency="weekly",
+                 customer_type="直客", main_market="北美",
+                 main_category="带电产品(电池)", cargo_preferences="锂电池/充电宝/电动工具",
+                 shipping_frequency="weekly",
                  usual_routes="美森快船,盐田普船", export_qualification="危包证,UN38.3",
                  avg_monthly_volume=45.5, avg_monthly_revenue=285000, customer_level="A",
                  health_score=88, cooperation_since=datetime.date(2023, 6, 1),
                  lifecycle_status=STATUS_ACTIVE, status_changed_at=now(), status_changed_by="张晓明"),
         Customer(lead_id=3, company_name="义乌欧凯进出口有限公司", contact_name="王芳",
                  phone="13800138003", email="wangf@okexport.com", country="中国",
-                 main_category="小商品/日用百货", shipping_frequency="daily",
+                 customer_type="直客", main_market="欧洲",
+                 main_category="小商品/日用百货", cargo_preferences="节日装饰/厨房用品/玩具",
+                 shipping_frequency="daily",
                  usual_routes="中欧班列,卡航", export_qualification="一般贸易",
                  avg_monthly_volume=120.0, avg_monthly_revenue=420000, customer_level="A",
                  health_score=92, cooperation_since=datetime.date(2022, 3, 15),
                  lifecycle_status=STATUS_TRIAL, status_changed_at=now(), status_changed_by="李强"),
         Customer(lead_id=6, company_name="宁波远洋国际贸易有限公司", contact_name="周董",
                  phone="13800138006", email="zhou@yuanyang.com", country="中国",
-                 main_category="大型机械设备", shipping_frequency="monthly",
+                 customer_type="同行", main_market="北美/欧洲",
+                 main_category="大型机械设备", cargo_preferences="注塑机/数控机床/工程机械",
+                 shipping_frequency="monthly",
                  usual_routes="盐田-洛杉矶,上海-鹿特丹", export_qualification="出口许可证",
                  avg_monthly_volume=200.0, avg_monthly_revenue=680000, customer_level="B",
                  health_score=72, cooperation_since=datetime.date(2023, 9, 10),
                  lifecycle_status=STATUS_NEGOTIATING, status_changed_at=now(), status_changed_by="张晓明"),
         Customer(company_name="AmazonSeller-DE GmbH", contact_name="Michael Braun",
                  phone="+49-176-1234567", email="m.braun@amzde.de", country="德国",
-                 main_category="普货(家居用品)", shipping_frequency="weekly",
+                 customer_type="直客", main_market="欧洲",
+                 main_category="普货(家居用品)", cargo_preferences="收纳柜/台灯/装饰画框",
+                 shipping_frequency="weekly",
                  usual_routes="海派FBA-DEU", export_qualification="CE认证",
                  avg_monthly_volume=32.0, avg_monthly_revenue=180000, customer_level="B",
                  health_score=75, cooperation_since=datetime.date(2024, 1, 20),
                  lifecycle_status=STATUS_QUOTED, status_changed_at=now(), status_changed_by="李强"),
         Customer(lead_id=2, company_name="广州恒通服装贸易有限公司", contact_name="李经理",
                  phone="13800138002", email="li@htfashion.com", country="中国",
-                 main_category="纺织品/服装", shipping_frequency="weekly",
+                 customer_type="直客", main_market="中东/南美",
+                 main_category="纺织品/服装", cargo_preferences="连衣裙/T恤/牛仔裤",
+                 shipping_frequency="weekly",
                  usual_routes="空派快件,卡航", export_qualification="一般贸易",
                  avg_monthly_volume=18.0, avg_monthly_revenue=95000, customer_level="C",
                  health_score=55, cooperation_since=datetime.date(2024, 6, 1),
                  lifecycle_status=STATUS_RECEDING, status_changed_at=now(), status_changed_by="张晓明"),
         Customer(lead_id=4, company_name="杭州锐思科技有限公司", contact_name="赵总",
                  phone="13800138004", email="zhao@ruisi-tech.com", country="中国",
-                 main_category="电子产品", shipping_frequency="monthly",
+                 customer_type="同行", main_market="东南亚",
+                 main_category="电子产品", cargo_preferences="手机配件/智能穿戴/蓝牙耳机",
+                 shipping_frequency="monthly",
                  usual_routes="空派快件", export_qualification="一般贸易",
                  avg_monthly_volume=5.0, avg_monthly_revenue=28000, customer_level="C",
                  health_score=60, cooperation_since=datetime.date(2026, 3, 1),
                  lifecycle_status=STATUS_NURTURING, status_changed_at=now(), status_changed_by="李强"),
         Customer(lead_id=5, company_name="东莞联达塑胶制品有限公司", contact_name="孙经理",
                  phone="13800138005", email="sun@lianda-plastic.com", country="中国",
-                 main_category="塑胶制品/普货", shipping_frequency="monthly",
+                 customer_type="直客", main_market="欧洲",
+                 main_category="塑胶制品/普货", cargo_preferences="塑料花盆/PVC管材/塑胶配件",
+                 shipping_frequency="monthly",
                  usual_routes="卡航-欧洲", export_qualification="一般贸易",
                  avg_monthly_volume=0, avg_monthly_revenue=0, customer_level="D",
                  health_score=40, cooperation_since=None,
@@ -426,6 +484,42 @@ def seed():
         ActivityLog(customer_id=1, activity_type="email", content="发送Q2季度运输方案：美森主线+盐田备线，已确认", created_by="张晓明", created_at=now()),
         ActivityLog(customer_id=2, activity_type="call", content="确认圣诞季备货计划，需提前预订舱位", created_by="李强", created_at=now()),
         ActivityLog(customer_id=3, activity_type="complaint", content="客户反馈鹿特丹查验延误，影响交期，需要紧急协调", created_by="张晓明", created_at=now()),
+
+        # ══ 客户日常跟进记录 (历史数据) ══
+        # 思科达 (客户1) — A级客户，活跃中
+        ActivityLog(customer_id=1, activity_type="visit", content="拜访思科达陈总，实地考察其仓库出货流程，确认电池品类包装合规方案", created_by="张晓明", created_at=now()-datetime.timedelta(days=60)),
+        ActivityLog(customer_id=1, activity_type="call", content="电话沟通5月排舱计划：预计4票美森+2票盐田，总体约120方", created_by="张晓明", created_at=now()-datetime.timedelta(days=35)),
+        ActivityLog(customer_id=1, activity_type="meeting", content="季度复盘会议：Q2累计出货121方，MoM+6%，客户对时效满意度92分", created_by="张晓明", created_at=now()-datetime.timedelta(days=15)),
+        ActivityLog(customer_id=1, activity_type="call", content="沟通新品充电宝运输资质要求，需UN38.3+MSDS文件，已协助客户准备", created_by="张晓明", created_at=now()-datetime.timedelta(days=5)),
+
+        # 欧凯 (客户2) — A级客户，试单中
+        ActivityLog(customer_id=2, activity_type="visit", content="赴义乌拜访王芳经理，参观其义乌仓配中心，日均发货量约40票", created_by="李强", created_at=now()-datetime.timedelta(days=40)),
+        ActivityLog(customer_id=2, activity_type="call", content="沟通中欧班列冬季运输方案，需关注低温环境下部分商品包装加固", created_by="李强", created_at=now()-datetime.timedelta(days=20)),
+        ActivityLog(customer_id=2, activity_type="email", content="发送圣诞季欧洲线备货计划书，建议提前8周锁定舱位", created_by="李强", created_at=now()-datetime.timedelta(days=7)),
+
+        # 宁波远洋 (客户3) — B级客户，谈判中
+        ActivityLog(customer_id=3, activity_type="call", content="与周董电话沟通，了解其大型设备出口欧美线的常规流程和痛点", created_by="张晓明", created_at=now()-datetime.timedelta(days=55)),
+        ActivityLog(customer_id=3, activity_type="meeting", content="面谈：客户对DDP条款有顾虑，主要担心目的港清关费用不可控", created_by="张晓明", created_at=now()-datetime.timedelta(days=35)),
+        ActivityLog(customer_id=3, activity_type="email", content="发送鹿特丹DDP费用拆分明细表，逐项说明清关/税金/送货费用构成", created_by="张晓明", created_at=now()-datetime.timedelta(days=20)),
+        ActivityLog(customer_id=3, activity_type="visit", content="带运营团队参观客户宁波仓库，进行大型设备包装方案现场评估", created_by="张晓明", created_at=now()-datetime.timedelta(days=12)),
+
+        # AmazonSeller-DE (客户4) — B级客户，已报价
+        ActivityLog(customer_id=4, activity_type="email", content="回复客户关于海派FBA-DEU的时效和价格咨询，附带德国仓库入仓要求", created_by="李强", created_at=now()-datetime.timedelta(days=25)),
+        ActivityLog(customer_id=4, activity_type="call", content="与Michael讨论CE认证产品的运输要求，确认所有产品已通过认证", created_by="李强", created_at=now()-datetime.timedelta(days=12)),
+
+        # 恒通服装 (客户5) — C级客户，减量中
+        ActivityLog(customer_id=5, activity_type="call", content="了解客户近期发货量下滑原因：客户海外业务战略调整，部分转东南亚采购", created_by="张晓明", created_at=now()-datetime.timedelta(days=28)),
+        ActivityLog(customer_id=5, activity_type="visit", content="拜访李经理，推介东南亚线+中东线方案，尝试匹配客户新供应链布局", created_by="张晓明", created_at=now()-datetime.timedelta(days=20)),
+        ActivityLog(customer_id=5, activity_type="email", content="发送东南亚线试运方案：越南→美国FBA头程+沙特中东线报价", created_by="张晓明", created_at=now()-datetime.timedelta(days=7)),
+
+        # 锐思科技 (客户6) — C级客户，培育中
+        ActivityLog(customer_id=6, activity_type="call", content="与赵总沟通，了解其电子产品主要出口东南亚，目前找了几家货代比较", created_by="李强", created_at=now()-datetime.timedelta(days=18)),
+        ActivityLog(customer_id=6, activity_type="meeting", content="面谈：客户对时效和追踪系统有较高要求，展示在线轨迹追踪功能获得认可", created_by="李强", created_at=now()-datetime.timedelta(days=8)),
+
+        # 联达塑胶 (客户7) — D级客户，已流失
+        ActivityLog(customer_id=7, activity_type="visit", content="拜访孙经理了解流失原因：主要竞争对手机报价低8%，已签约竞品年度合约", created_by="张晓明", created_at=now()-datetime.timedelta(days=25)),
+        ActivityLog(customer_id=7, activity_type="call", content="最后一次挽留沟通：提供卡航特价方案+账期延长30天优惠，客户表示已有合约", created_by="张晓明", created_at=now()-datetime.timedelta(days=20)),
+        ActivityLog(customer_id=7, activity_type="email", content="发送归档确认邮件，保留未来合作可能，每季度回访一次", created_by="张晓明", created_at=now()-datetime.timedelta(days=15)),
     ]
     db.add_all(activities)
     db.commit()

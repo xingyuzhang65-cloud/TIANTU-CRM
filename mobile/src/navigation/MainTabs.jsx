@@ -3,51 +3,26 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
-import LeadListScreen from '../screens/leads/LeadListScreen';
+import LeadCustomerHomeScreen from '../screens/customers/LeadCustomerHomeScreen';
 import LeadDetailScreen from '../screens/leads/LeadDetailScreen';
 import CreateLeadScreen from '../screens/leads/CreateLeadScreen';
-import CustomerListScreen from '../screens/customers/CustomerListScreen';
 import CustomerDetailScreen from '../screens/customers/CustomerDetailScreen';
-import QuotationScreen from '../screens/quotations/QuotationScreen';
-import TrackingScreen from '../screens/tracking/TrackingScreen';
-import FinanceScreen from '../screens/finance/FinanceScreen';
-import AnalyticsScreen from '../screens/analytics/AnalyticsScreen';
-import AIAssistantScreen from '../screens/ai/AIAssistantScreen';
+import InquiryQuotationHomeScreen from '../screens/quotations/InquiryQuotationHomeScreen';
+import TrackingHomeScreen from '../screens/tracking/TrackingHomeScreen';
+import MomentsScreen from '../screens/moments/MomentsScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
-const LeadStack = createNativeStackNavigator();
-const CustomerStack = createNativeStackNavigator();
-const WorkbenchStack = createNativeStackNavigator();
+const LeadCustomerStack = createNativeStackNavigator();
 
-function LeadStackNav() {
+function LeadCustomerStackNav() {
   return (
-    <LeadStack.Navigator screenOptions={{ headerShown: false }}>
-      <LeadStack.Screen name="LeadList" component={LeadListScreen} />
-      <LeadStack.Screen name="LeadDetail" component={LeadDetailScreen} />
-      <LeadStack.Screen name="CreateLead" component={CreateLeadScreen} />
-    </LeadStack.Navigator>
-  );
-}
-
-function CustomerStackNav() {
-  return (
-    <CustomerStack.Navigator screenOptions={{ headerShown: false }}>
-      <CustomerStack.Screen name="CustomerList" component={CustomerListScreen} />
-      <CustomerStack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
-    </CustomerStack.Navigator>
-  );
-}
-
-function WorkbenchStackNav() {
-  return (
-    <WorkbenchStack.Navigator screenOptions={{ headerShown: false }}>
-      <WorkbenchStack.Screen name="Quotation" component={QuotationScreen} />
-      <WorkbenchStack.Screen name="Tracking" component={TrackingScreen} />
-      <WorkbenchStack.Screen name="Finance" component={FinanceScreen} />
-      <WorkbenchStack.Screen name="Analytics" component={AnalyticsScreen} />
-      <WorkbenchStack.Screen name="AIAssistant" component={AIAssistantScreen} />
-    </WorkbenchStack.Navigator>
+    <LeadCustomerStack.Navigator screenOptions={{ headerShown: false }}>
+      <LeadCustomerStack.Screen name="LeadCustomerHome" component={LeadCustomerHomeScreen} />
+      <LeadCustomerStack.Screen name="LeadDetail" component={LeadDetailScreen} />
+      <LeadCustomerStack.Screen name="CreateLead" component={CreateLeadScreen} />
+      <LeadCustomerStack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
+    </LeadCustomerStack.Navigator>
   );
 }
 
@@ -59,10 +34,11 @@ export default function MainTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
             Home: focused ? 'home' : 'home-outline',
-            Leads: focused ? 'people' : 'people-outline',
-            Customers: focused ? 'briefcase' : 'briefcase-outline',
-            Workbench: focused ? 'apps' : 'apps-outline',
-            Settings: focused ? 'settings' : 'settings-outline',
+            LeadCustomers: focused ? 'people' : 'people-outline',
+            InquiryQuotation: focused ? 'calculator' : 'calculator-outline',
+            Tracking: focused ? 'location' : 'location-outline',
+            Moments: focused ? 'earth' : 'earth-outline',
+            Settings: focused ? 'person' : 'person-outline',
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
@@ -73,10 +49,11 @@ export default function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={DashboardScreen} options={{ title: '首页' }} />
-      <Tab.Screen name="Leads" component={LeadStackNav} options={{ title: '线索' }} />
-      <Tab.Screen name="Customers" component={CustomerStackNav} options={{ title: '客户' }} />
-      <Tab.Screen name="Workbench" component={WorkbenchStackNav} options={{ title: '工作台' }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: '设置' }} />
+      <Tab.Screen name="Moments" component={MomentsScreen} options={{ title: '朋友圈' }} />
+      <Tab.Screen name="LeadCustomers" component={LeadCustomerStackNav} options={{ title: '线索与客户' }} />
+      <Tab.Screen name="InquiryQuotation" component={InquiryQuotationHomeScreen} options={{ title: '报价与询价' }} />
+      <Tab.Screen name="Tracking" component={TrackingHomeScreen} options={{ title: '运踪' }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: '我的' }} />
     </Tab.Navigator>
   );
 }

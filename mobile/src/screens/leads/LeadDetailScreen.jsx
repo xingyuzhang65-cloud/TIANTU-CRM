@@ -97,9 +97,6 @@ export default function LeadDetailScreen({ route, navigation }) {
 
         {lead.lead_status === 1 && (
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => setShowFollowForm(true)}>
-              <Text style={styles.actionBtnText}>+ 添加跟进</Text>
-            </TouchableOpacity>
             <TouchableOpacity style={[styles.actionBtn, styles.convertBtn]} onPress={() => handleConvert('customer')}>
               <Text style={styles.actionBtnText}>转为客户</Text>
             </TouchableOpacity>
@@ -107,7 +104,12 @@ export default function LeadDetailScreen({ route, navigation }) {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>跟进记录 ({followUps.length})</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>跟进记录 ({followUps.length})</Text>
+            <TouchableOpacity style={styles.addFollowBtn} onPress={() => setShowFollowForm(true)}>
+              <Ionicons name="add-circle-outline" size={22} color="#2563eb" />
+            </TouchableOpacity>
+          </View>
           {followUps.map((f, i) => (
             <View key={f.id || i} style={styles.followCard}>
               <View style={styles.followHeader}>
@@ -172,7 +174,9 @@ const styles = StyleSheet.create({
   convertBtn: { backgroundColor: '#16a34a' },
   actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   section: { marginTop: 20, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a', marginBottom: 10 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
+  addFollowBtn: { padding: 4 },
   followCard: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
   followHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   followBy: { fontSize: 12, color: '#94a3b8' },

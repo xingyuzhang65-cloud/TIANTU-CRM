@@ -235,7 +235,10 @@ class Customer(Base):
     email = Column(String(200))
     country = Column(String(100))
     # KYC 画像
+    customer_type = Column(String(20), default="直客", comment="客户类型: 直客/同行")
+    main_market = Column(String(100), comment="主要市场: 北美/欧洲/东南亚/中东/南美")
     main_category = Column(String(200), comment="主营类目: 带电产品/超大件/普货/纺织品")
+    cargo_preferences = Column(String(200), comment="偏好品名: 电池/家具/服装/电子/机械等")
     shipping_frequency = Column(String(50), comment="发货频率: daily/weekly/monthly/seasonal")
     usual_routes = Column(String(200), comment="常用路线: 美森/盐田/空运/中欧班列")
     export_qualification = Column(String(200), comment="出口资质")

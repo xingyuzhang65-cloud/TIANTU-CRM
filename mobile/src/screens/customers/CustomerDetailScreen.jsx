@@ -7,15 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import client from '../../api/client';
 import StatusBadge from '../../components/StatusBadge';
-import ActivityTimeline from '../../components/ActivityTimeline';
 
 const SCREEN_W = Dimensions.get('window').width;
-const STAGES = [
-  { key: 'developing', label: '开发中', color: 'blue' },
-  { key: 'negotiating', label: '报价谈判', color: 'orange' },
-  { key: 'cooperating', label: '合作中', color: 'green' },
-  { key: 'archived', label: '已归档', color: 'gray' },
-];
 
 export default function CustomerDetailScreen({ route, navigation }) {
   const { customerId } = route.params;
@@ -29,6 +22,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
   const [followType, setFollowType] = useState('call');
   const [followContent, setFollowContent] = useState('');
   const [aiInsight, setAiInsight] = useState(null);
+  const [activities, setActivities] = useState([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -41,6 +35,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
         setOpps(custRes.opportunities || []);
         setOrders(custRes.orders || []);
         setCredit(custRes.credit);
+        setActivities(custRes.activities || []);
       }
       if (trendRes.ok) setTrend(trendRes.trend || []);
     } catch {}
@@ -48,14 +43,6 @@ export default function CustomerDetailScreen({ route, navigation }) {
   }, [customerId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleTransition = async (stage) => {
-    try {
-      const res = await client.post(`/api/customer/${customerId}/transition?to_status=${stage}&operator=张晓明`);
-      if (res.ok) { Alert.alert('成功', res.msg); fetchData(); }
-      else Alert.alert('失败', res.msg);
-    } catch (e) { Alert.alert('错误', e.message); }
-  };
 
   const handleFollow = async () => {
     if (!followContent.trim()) { Alert.alert('提示', '请输入内容'); return; }
@@ -91,6 +78,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
       </View>
 
       <ScrollView style={styles.body}>
+        {/* Header card */}
         <View style={styles.topCard}>
           <View style={styles.topRow}>
             <Text style={styles.company} numberOfLines={1}>{cust.company_name}</Text>
@@ -98,25 +86,59 @@ export default function CustomerDetailScreen({ route, navigation }) {
           </View>
           <View style={styles.tags}>
             <StatusBadge label={cust.lifecycle_label || cust.lifecycle_status} color="blue" />
+            <StatusBadge label={cust.customer_type || '直客'} color={cust.customer_type === '同行' ? 'orange' : 'green'} />
             {cust.order_frequency_tag ? <StatusBadge label={cust.order_frequency_tag} color="purple" /> : null}
           </View>
         </View>
 
+        {/* KYC detail card */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>生命周期阶段</Text>
-          <View style={styles.stageRow}>
-            {STAGES.map(s => (
-              <TouchableOpacity
-                key={s.key}
-                style={[styles.stageBtn, cust.lifecycle_status === s.key && { backgroundColor: '#2563eb' }]}
-                onPress={() => handleTransition(s.key)}
-              >
-                <Text style={[styles.stageText, cust.lifecycle_status === s.key && { color: '#fff' }]}>{s.label}</Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.sectionTitle}>客户画像</Text>
+          <View style={styles.kycCard}>
+            <View style={styles.kycRow}>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>客户类型</Text>
+                <Text style={styles.kycVal}>{cust.customer_type || '直客'}</Text>
+              </View>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>主要市场</Text>
+                <Text style={styles.kycVal}>{cust.main_market || '-'}</Text>
+              </View>
+            </View>
+            <View style={styles.kycRow}>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>主营类目</Text>
+                <Text style={styles.kycVal}>{cust.main_category || '-'}</Text>
+              </View>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>偏好品名</Text>
+                <Text style={styles.kycVal}>{cust.cargo_preferences || '-'}</Text>
+              </View>
+            </View>
+            <View style={styles.kycRow}>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>发货频率</Text>
+                <Text style={styles.kycVal}>{cust.shipping_frequency || '-'}</Text>
+              </View>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>常用路线</Text>
+                <Text style={styles.kycVal}>{cust.usual_routes || '-'}</Text>
+              </View>
+            </View>
+            <View style={styles.kycRow}>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>出口资质</Text>
+                <Text style={styles.kycVal}>{cust.export_qualification || '-'}</Text>
+              </View>
+              <View style={styles.kycItem}>
+                <Text style={styles.kycLabel}>合作起始</Text>
+                <Text style={styles.kycVal}>{cust.cooperation_since || '-'}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
+        {/* Metrics */}
         <View style={styles.metricsRow}>
           <View style={styles.metricCard}>
             <Text style={styles.metricVal}>{(cust.volume_mom > 0 ? '+' : '')}{(cust.volume_mom || 0).toFixed(1)}%</Text>
@@ -153,6 +175,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
           </View>
         )}
 
+        {/* Contact info */}
         <View style={styles.infoGrid}>
           <View style={styles.infoItem}><Text style={styles.infoLabel}>联系人</Text><Text style={styles.infoVal}>{cust.contact_name || '-'}</Text></View>
           <View style={styles.infoItem}><Text style={styles.infoLabel}>电话</Text><Text style={styles.infoVal}>{cust.phone || '-'}</Text></View>
@@ -188,7 +211,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
                 <Text style={styles.oppName}>{o.name}</Text>
                 <View style={styles.oppRow}>
                   <StatusBadge label={o.stage} color="blue" />
-                  <Text style={styles.oppAmount}>¥{(o.amount / 10000).toFixed(1)}万</Text>
+                  <Text style={styles.oppAmount}>{(o.amount / 10000).toFixed(1)}万</Text>
                   <Text style={styles.oppProb}>赢率 {o.win_probability}%</Text>
                 </View>
               </View>
@@ -211,6 +234,24 @@ export default function CustomerDetailScreen({ route, navigation }) {
           </View>
         )}
 
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>跟进记录 ({activities.length})</Text>
+            <TouchableOpacity style={styles.addFollowBtn} onPress={() => setShowFollow(true)}>
+              <Ionicons name="add-circle-outline" size={22} color="#2563eb" />
+            </TouchableOpacity>
+          </View>
+          {activities.length > 0 ? activities.map((a, i) => (
+              <View key={a.id || i} style={styles.followCard}>
+                <View style={styles.followHeader}>
+                  <Text style={styles.followBy}>{a.created_by}</Text>
+                  <Text style={styles.followTime}>{a.created_at?.slice(0, 16)}</Text>
+                </View>
+                <Text style={styles.followContent}>{a.content}</Text>
+              </View>
+            )) : null}
+          </View>
+
         {aiInsight && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>AI 客户洞察</Text>
@@ -227,6 +268,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
         <View style={{ height: 20 }} />
       </ScrollView>
 
+      {/* FAB - Follow-up */}
       <TouchableOpacity style={styles.fab} onPress={() => setShowFollow(!showFollow)}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
@@ -263,10 +305,17 @@ const styles = StyleSheet.create({
   company: { fontSize: 20, fontWeight: '700', color: '#0f172a', flex: 1 },
   tags: { flexDirection: 'row', gap: 8, marginTop: 10 },
   section: { marginTop: 16, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a', marginBottom: 10 },
-  stageRow: { flexDirection: 'row', gap: 8 },
-  stageBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' },
-  stageText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
+  addFollowBtn: { padding: 4 },
+
+  // KYC card
+  kycCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14 },
+  kycRow: { flexDirection: 'row', marginBottom: 2 },
+  kycItem: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  kycLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 4 },
+  kycVal: { fontSize: 14, color: '#334155', fontWeight: '500' },
+
   metricsRow: { flexDirection: 'row', paddingHorizontal: 11, marginTop: 16 },
   metricCard: { flex: 1, backgroundColor: '#fff', margin: 5, borderRadius: 10, padding: 12, alignItems: 'center' },
   metricVal: { fontSize: 18, fontWeight: '700', color: '#2563eb' },
@@ -302,4 +351,11 @@ const styles = StyleSheet.create({
   followInput: { backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, fontSize: 14, minHeight: 60, borderWidth: 1, borderColor: '#e2e8f0', textAlignVertical: 'top' },
   followBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12 },
   followBtnText: { color: '#fff', fontWeight: '600' },
+
+  // Follow-up history
+  followCard: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+  followHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  followBy: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
+  followTime: { fontSize: 11, color: '#94a3b8' },
+  followContent: { fontSize: 14, color: '#334155', lineHeight: 20 },
 });

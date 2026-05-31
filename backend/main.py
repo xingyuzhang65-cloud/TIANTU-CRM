@@ -455,51 +455,6 @@ def page_customers(request: Request, db: Session = Depends(get_db)):
                   warning_count=warning_count, warning_threshold=abs(WARNING_MOM_THRESHOLD))
 
 
-@app.get("/quotation", response_class=HTMLResponse)
-def page_quotation(request: Request, db: Session = Depends(get_db)):
-    """报价管理"""
-    quotes = db.query(Quotation).order_by(desc(Quotation.created_at)).all()
-    return render("quotation.html", request, active_page="quotation", quotes=quotes)
-
-
-@app.get("/tracking", response_class=HTMLResponse)
-def page_tracking(request: Request, db: Session = Depends(get_db)):
-    """轨迹追踪与客户服务"""
-    orders = db.query(Order).order_by(desc(Order.created_at)).all()
-    ready_complaints = db.query(Complaint).order_by(desc(Complaint.created_at)).all()
-    return render("tracking.html", request, active_page="tracking",
-        orders=orders, complaints=ready_complaints)
-
-
-@app.get("/risk", response_class=HTMLResponse)
-def page_risk(request: Request, db: Session = Depends(get_db)):
-    """风控与授信"""
-    credits = db.query(CreditInfo).join(Customer).order_by(desc(CreditInfo.days_aged)).all()
-    return render("risk.html", request, active_page="risk", credits=credits)
-
-
-@app.get("/analytics", response_class=HTMLResponse)
-def page_analytics(request: Request, db: Session = Depends(get_db)):
-    """经营分析看板"""
-    # 客户分级统计
-    level_stats = db.query(Customer.customer_level, func.count(Customer.id)).group_by(
-        Customer.customer_level).all()
-    # 航线利润分析
-    route_stats = db.query(Order.route_detail, func.count(Order.id), func.sum(Order.weight_kg)).group_by(
-        Order.route_detail).all()
-    # 流失预警: 活跃客户但近两周无新单
-    two_weeks_ago = _date() - datetime.timedelta(days=14)
-    churn_risk = db.query(Customer).filter(
-        Customer.health_score < 60
-    ).order_by(Customer.health_score).all()
-    return render("analytics.html", request, active_page="analytics",
-        level_stats=level_stats, route_stats=route_stats, churn_risk=churn_risk)
-
-
-@app.get("/ai-assistant", response_class=HTMLResponse)
-def page_ai(request: Request, db: Session = Depends(get_db)):
-    """AI 智能助手 (ShareAI 能力集成)"""
-    return render("ai_assistant.html", request, active_page="ai_assistant")
 
 
 @app.get("/customer/{cid}", response_class=HTMLResponse)
@@ -540,90 +495,6 @@ def page_customer_detail(cid: int, request: Request, db: Session = Depends(get_d
 
 # ═══════════════════════════════════════════════
 # API 路由 - 状态流转
-# ═══════════════════════════════════════════════
-
-@app.post("/api/customer/{cid}/transition")
-def transition_customer(cid: int, to_status: str = Query(...),
-                        operator: str = Query("张晓明"),
-                        quotation_id: int = Query(None),
-                        negotiation_notes: str = Query(None),
-                        order_count: int = Query(None),
-                        churn_reason: str = Query(None),
-                        disqualify_reason: str = Query(None),
-                        remark: str = Query(None),
-                        db: Session = Depends(get_db)):
-    """客户状态流转 — 按文档定义的10状态规则执行"""
-    cust = db.query(Customer).filter(Customer.id == cid).first()
-    if not cust:
-        return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
-    current = cust.lifecycle_status
-    # 支持 PRD V2 4阶段名称: 自动映射为底层状态
-    if to_status in ALL_STAGES:
-        actual_status = STAGE_TO_DEFAULT_STATUS.get(to_status, to_status)
-    elif to_status in ALL_STATUSES:
-        actual_status = to_status
-    else:
-        return JSONResponse({"ok": False, "msg": f"无效的状态: {to_status}"}, 400)
-    # 流转时的强校验（特定状态需要填写必填项）
-    reqs = TRANSITION_REQUIREMENTS.get(actual_status, [])
-    for req in reqs:
-        if req == "quotation_id" and not quotation_id:
-            return JSONResponse({"ok": False, "msg": "流转到「已报价」必须关联报价单ID"}, 400)
-        if req == "negotiation_notes" and not negotiation_notes:
-            return JSONResponse({"ok": False, "msg": "流转到「商务谈判」必须填写谈判纪要"}, 400)
-        if req == "order_count" and not order_count:
-            return JSONResponse({"ok": False, "msg": "流转到「试单中」必须说明试单票数"}, 400)
-        if req == "churn_reason" and not churn_reason:
-            return JSONResponse({"ok": False, "msg": "流转到「已流失」必须填写流失原因"}, 400)
-        if req == "disqualify_reason" and not disqualify_reason:
-            return JSONResponse({"ok": False, "msg": "流转到「无效/关闭」必须填写无效原因"}, 400)
-    # 3. 执行流转
-    old_status = current
-    cust.lifecycle_status = actual_status
-    cust.status_changed_at = _now()
-    cust.status_changed_by = operator
-    # 流转到新线索时回流公海池
-    if actual_status == STATUS_NEW:
-        if cust.lead_id:
-            lead = db.query(Lead).filter(Lead.id == cust.lead_id).first()
-            if lead:
-                lead.owner = None
-                lead.status = STATUS_NEW
-                lead.auto_reclaim = False
-    # 记录活动
-    extra_parts = []
-    if quotation_id:
-        extra_parts.append(f"关联报价单#{quotation_id}")
-    if negotiation_notes:
-        extra_parts.append(f"谈判纪要: {negotiation_notes}")
-    if order_count:
-        extra_parts.append(f"试单票数: {order_count}票")
-    if churn_reason:
-        extra_parts.append(f"流失原因: {churn_reason}")
-    if disqualify_reason:
-        extra_parts.append(f"无效原因: {disqualify_reason}")
-    if remark:
-        extra_parts.append(f"备注: {remark}")
-    extra_str = (" | " + " | ".join(extra_parts)) if extra_parts else ""
-    log = ActivityLog(
-        customer_id=cid,
-        activity_type="status_change",
-        content=f"{STATUS_LABELS.get(old_status, old_status)} → {STATUS_LABELS.get(actual_status, actual_status)}{extra_str}",
-        status_from=old_status,
-        status_to=actual_status,
-        created_by=operator,
-    )
-    db.add(log)
-    db.commit()
-    return {
-        "ok": True,
-        "from": old_status,
-        "from_label": STATUS_LABELS.get(old_status, old_status),
-        "to": actual_status,
-        "to_label": STATUS_LABELS.get(actual_status, actual_status),
-        "msg": f"状态已更新: {STATUS_LABELS.get(old_status, '')} → {STATUS_LABELS.get(actual_status, '')}"
-    }
-
 
 # ═══════════════════════════════════════════════
 # API 路由 - 线索管理
@@ -770,6 +641,27 @@ def api_lead_list(
             "source": l.source,
             "country": l.country,
         })
+    # 附上每个线索的最新跟进记录
+    if result:
+        lead_ids = [r["id"] for r in result]
+        latest_fus = db.query(FollowUp).filter(
+            FollowUp.lead_id.in_(lead_ids)
+        ).order_by(FollowUp.created_at.desc()).all()
+        fu_map = {}
+        for f in latest_fus:
+            if f.lead_id not in fu_map:
+                fu_map[f.lead_id] = f
+        for r in result:
+            fu = fu_map.get(r["id"])
+            if fu:
+                r["latest_follow"] = {
+                    "type": "follow",
+                    "content": fu.content,
+                    "created_at": str(fu.created_at),
+                    "created_by": fu.created_by,
+                }
+            else:
+                r["latest_follow"] = None
     return {"ok": True, "leads": result, "total": len(result)}
 
 
@@ -873,6 +765,18 @@ def api_lead_create(data: LeadCreateData, db: Session = Depends(get_db)):
         status=STATUS_NEW,
     )
     db.add(lead)
+    db.flush()
+    # 自动生成跟进记录
+    now_str = _now().strftime("%m月%d日 %H:%M")
+    fu = FollowUp(
+        lead_id=lead.id,
+        status="新建",
+        content=f"{now_str} 新建了线索「{company_name}」",
+        created_by=data.contact_name or "系统",
+    )
+    db.add(fu)
+    lead.last_followed = _now()
+    lead.follow_count = 1
     db.commit()
     db.refresh(lead)
     return {"ok": True, "lead_id": lead.id, "msg": "线索创建成功，已进入公海池"}
@@ -1211,7 +1115,70 @@ def api_customer_list(
             "owner": c.owner,
             "created_at": str(c.created_at),
         })
+    # 附上每个客户的最新跟进记录
+    if result:
+        cust_ids = [r["id"] for r in result]
+        latest_acts = db.query(ActivityLog).filter(
+            ActivityLog.customer_id.in_(cust_ids)
+        ).order_by(ActivityLog.created_at.desc()).all()
+        act_map = {}
+        for a in latest_acts:
+            if a.customer_id not in act_map:
+                act_map[a.customer_id] = a
+        for r in result:
+            act = act_map.get(r["id"])
+            if act:
+                r["latest_follow"] = {
+                    "type": act.activity_type,
+                    "content": act.content,
+                    "created_at": str(act.created_at),
+                    "created_by": act.created_by,
+                }
+            else:
+                r["latest_follow"] = None
     return {"ok": True, "customers": result, "total": len(result)}
+
+
+@app.put("/api/customer/{cid}/stage")
+def update_customer_stage(cid: int, stage: str = Query(...), db: Session = Depends(get_db)):
+    """快捷编辑客户阶段"""
+    cust = db.query(Customer).filter(Customer.id == cid).first()
+    if not cust:
+        return JSONResponse({"ok": False, "msg": "客户不存在"}, 404)
+    old_label = STATUS_LABELS.get(cust.lifecycle_status, cust.lifecycle_status)
+    cust.lifecycle_status = stage
+    cust.status_changed_at = _now()
+    db.commit()
+    new_label = STATUS_LABELS.get(stage, stage)
+    return {"ok": True, "msg": f"已从 {old_label} 更新为 {new_label}"}
+
+
+@app.put("/api/leads/{lid}/stage")
+def update_lead_stage(lid: int, stage: str = Query(...), db: Session = Depends(get_db)):
+    """快捷编辑线索阶段（选非开发中时自动转化为客户）"""
+    lead = db.query(Lead).filter(Lead.id == lid).first()
+    if not lead:
+        return JSONResponse({"ok": False, "msg": "线索不存在"}, 404)
+    if stage == 'lead':
+        return {"ok": True, "msg": "线索阶段不变"}
+    cust = Customer(
+        lead_id=lead.id,
+        company_name=lead.company_name,
+        contact_name=lead.contact_name,
+        phone=lead.phone or lead.contact_mobile,
+        email=lead.email,
+        country=lead.country,
+        lifecycle_status=stage,
+        owner=lead.owner,
+        owner_id=lead.owner_id,
+        cooperation_since=datetime.date.today(),
+    )
+    db.add(cust)
+    lead.lead_status = LEAD_STATUS_CONVERTED
+    lead.converted_at = _now()
+    lead.converted_to_type = "customer"
+    db.commit()
+    return {"ok": True, "msg": f"线索已转化为客户（{STATUS_LABELS.get(stage, stage)}）", "customer_id": cust.id}
 
 
 @app.get("/api/customers/{cid}/orders")
@@ -1303,6 +1270,7 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
     opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
     orders = db.query(Order).filter(Order.customer_id == cid).order_by(desc(Order.created_at)).limit(10).all()
     credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
+    activities = db.query(ActivityLog).filter(ActivityLog.customer_id == cid).order_by(desc(ActivityLog.created_at)).limit(20).all()
     # 线索溯源
     lead_info = None
     if cust.lead_id:
@@ -1315,9 +1283,13 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
             "id": cust.id, "lead_id": cust.lead_id,
             "company_name": cust.company_name,
             "contact_name": cust.contact_name, "country": cust.country,
+            "customer_type": cust.customer_type or "直客",
+            "main_market": cust.main_market,
             "main_category": cust.main_category,
+            "cargo_preferences": cust.cargo_preferences,
             "shipping_frequency": cust.shipping_frequency,
             "usual_routes": cust.usual_routes,
+            "export_qualification": cust.export_qualification,
             "avg_monthly_volume": cust.avg_monthly_volume,
             "avg_monthly_revenue": cust.avg_monthly_revenue,
             "customer_level": cust.customer_level,
@@ -1337,31 +1309,9 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
                     "has_exception": o.has_exception} for o in orders],
         "credit": {"credit_score": credit.credit_score, "credit_limit": credit.credit_limit,
                    "balance_due": credit.balance_due, "days_aged": credit.days_aged} if credit else None,
-    }
-def get_customer(cid: int, db: Session = Depends(get_db)):
-    """获取客户详情含画像、商机、订单"""
-    cust = db.query(Customer).filter(Customer.id == cid).first()
-    if not cust:
-        return JSONResponse({"ok": False}, 404)
-    opps = db.query(Opportunity).filter(Opportunity.customer_id == cid).all()
-    orders = db.query(Order).filter(Order.customer_id == cid).order_by(desc(Order.created_at)).limit(10).all()
-    credit = db.query(CreditInfo).filter(CreditInfo.customer_id == cid).first()
-    return {
-        "customer": {
-            "id": cust.id, "company_name": cust.company_name,
-            "contact_name": cust.contact_name, "country": cust.country,
-            "main_category": cust.main_category, "shipping_frequency": cust.shipping_frequency,
-            "usual_routes": cust.usual_routes, "avg_monthly_volume": cust.avg_monthly_volume,
-            "avg_monthly_revenue": cust.avg_monthly_revenue,
-            "customer_level": cust.customer_level,
-        },
-        "opportunities": [{"id": o.id, "name": o.name, "stage": o.stage,
-                           "amount": o.amount, "win_probability": o.win_probability} for o in opps],
-        "orders": [{"id": o.id, "tracking_number": o.tracking_number,
-                    "status": o.status, "route_detail": o.route_detail,
-                    "has_exception": o.has_exception} for o in orders],
-        "credit": {"credit_score": credit.credit_score, "credit_limit": credit.credit_limit,
-                   "balance_due": credit.balance_due, "days_aged": credit.days_aged} if credit else None
+        "activities": [{"id": a.id, "activity_type": a.activity_type,
+                        "content": a.content, "created_by": a.created_by,
+                        "created_at": str(a.created_at)} for a in activities],
     }
 
 

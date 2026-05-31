@@ -10,3 +10,5 @@ venv/
 *.log
 mobile/dist/
 mobile/dist-new/
+frontend/.vite/
+node_modules/
