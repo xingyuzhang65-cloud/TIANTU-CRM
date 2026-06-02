@@ -8,7 +8,7 @@ import asyncio
 from typing import Dict as DictType, Any
 from collections import defaultdict
 
-from fastapi import FastAPI, Request, Depends, Query, Body
+from fastapi import FastAPI, Request, Depends, Query, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -23,12 +23,13 @@ from models import (
     CreditInfo, ActivityLog, Complaint,
     FollowUp, ClaimRecord, SystemConfig, User,
     Moment, MomentInteraction,
+    FollowupReminder,
     ALL_STATUSES, STATUS_LABELS, TRANSITION_REQUIREMENTS,
-    STATUS_NEW,
+    STATUS_NEW, STATUS_DISQUALIFIED, STATUS_CHURNED,
     LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE, LEAD_STATUS_CONVERTED,
     LEAD_STATUS_LABELS, LOGISTICS_TYPES, TARGET_MARKETS, FOLLOW_STATUSES,
     ALL_STAGES, STAGE_LABELS, STAGE_STATUS_MAP, STATUS_TO_STAGE,
-    STAGE_DEVELOPING, STAGE_NEGOTIATING, STAGE_COOPERATING, STAGE_ARCHIVED,
+    STAGE_DEVELOPING, STAGE_QUOTED, STAGE_COOPERATING, STAGE_CHURNED,
     STAGE_TO_DEFAULT_STATUS,
     COOPERATING_AUTO_DAYS, WARNING_MOM_THRESHOLD,
 )
@@ -214,8 +215,10 @@ async def startup():
     Base.metadata.create_all(bind=engine)
     asyncio.create_task(auto_reclaim_scheduler())
     asyncio.create_task(daily_metrics_scheduler())
+    asyncio.create_task(reminder_auto_scheduler())
     print("⚙️  公海池自动回收调度器已启动 (每60秒检测)")
     print("📊 客户指标每日计算调度器已启动")
+    print("🔔 跟进提醒自动调度器已启动 (每120秒检测)")
 
 
 async def daily_metrics_scheduler():
@@ -590,8 +593,278 @@ def reclaim_leads(db: Session = Depends(get_db)):
 
 
 # ═══════════════════════════════════════════════
-# API 路由 - 线索管理 (PRD v1.0 完整实现)
+# API 路由 - 跟进提醒 (PRD V1.1)
 # ═══════════════════════════════════════════════
+
+class ReminderCreateData(BaseModel):
+    lead_id: int = None
+    customer_id: int = None
+    reminder_type: str = "schedule"
+    content: str = ""
+    remind_at: str = ""
+    created_by: str = ""
+
+
+@app.get("/api/reminders/list")
+def api_reminders_list(
+    stage: str = Query(None),
+    overdue: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    """获取跟进提醒列表"""
+    q = db.query(FollowupReminder).filter(
+        FollowupReminder.is_completed == False,
+        FollowupReminder.is_snoozed == False,
+    )
+    now = _now()
+    if overdue:
+        q = q.filter(FollowupReminder.remind_at < now)
+
+    # 按stage筛选关联的客户/线索
+    if stage:
+        stage_statuses = STAGE_STATUS_MAP.get(stage, [])
+        if stage_statuses:
+            cust_ids = db.query(Customer.id).filter(Customer.lifecycle_status.in_(stage_statuses)).all()
+            cust_id_list = [c[0] for c in cust_ids]
+            q = q.filter(
+                FollowupReminder.customer_id.in_(cust_id_list) |
+                FollowupReminder.lead_id.in_(
+                    db.query(Lead.id).filter(Lead.status.in_(stage_statuses))
+                )
+            )
+
+    reminders = q.order_by(FollowupReminder.remind_at.asc()).all()
+    return {
+        "ok": True,
+        "reminders": [{
+            "id": r.id, "reminder_type": r.reminder_type,
+            "content": r.content, "remind_at": str(r.remind_at),
+            "lead_id": r.lead_id, "customer_id": r.customer_id,
+            "is_completed": r.is_completed, "is_snoozed": r.is_snoozed,
+            "snoozed_until": str(r.snoozed_until) if r.snoozed_until else None,
+            "overdue_days": r.overdue_days,
+            "created_by": r.created_by, "created_at": str(r.created_at),
+        } for r in reminders],
+        "total": len(reminders),
+    }
+
+
+@app.post("/api/reminders/create")
+def api_reminder_create(data: ReminderCreateData, db: Session = Depends(get_db)):
+    """手动创建跟进提醒"""
+    try:
+        nft = datetime.datetime.fromisoformat(data.remind_at) if data.remind_at else None
+    except:
+        nft = None
+    if not nft:
+        return {"ok": False, "msg": "请指定提醒时间"}
+    rem = FollowupReminder(
+        lead_id=data.lead_id,
+        customer_id=data.customer_id,
+        reminder_type=data.reminder_type,
+        content=data.content,
+        remind_at=nft,
+        created_by=data.created_by or "张晓明",
+    )
+    db.add(rem)
+    db.commit()
+    return {"ok": True, "msg": "提醒已创建", "reminder_id": rem.id}
+
+
+@app.put("/api/reminders/{rem_id}/snooze")
+def api_reminder_snooze(
+    rem_id: int,
+    delay_minutes: int = Query(120, comment="延期多少分钟"),
+    delay_hours: int = Query(None),
+    delay_days: int = Query(None),
+    db: Session = Depends(get_db),
+):
+    """延期提醒"""
+    rem = db.query(FollowupReminder).filter(FollowupReminder.id == rem_id).first()
+    if not rem:
+        return {"ok": False, "msg": "提醒不存在"}, 404
+    now = _now()
+    if delay_days:
+        delta = datetime.timedelta(days=delay_days)
+    elif delay_hours:
+        delta = datetime.timedelta(hours=delay_hours)
+    else:
+        delta = datetime.timedelta(minutes=delay_minutes)
+    rem.is_snoozed = True
+    rem.snoozed_until = now + delta
+    db.commit()
+    return {"ok": True, "msg": f"已延期至 {rem.snoozed_until.strftime('%m-%d %H:%M')}"}
+
+
+@app.put("/api/reminders/{rem_id}/complete")
+def api_reminder_complete(rem_id: int, db: Session = Depends(get_db)):
+    """完成提醒"""
+    rem = db.query(FollowupReminder).filter(FollowupReminder.id == rem_id).first()
+    if not rem:
+        return {"ok": False, "msg": "提醒不存在"}, 404
+    rem.is_completed = True
+    rem.completed_at = _now()
+    db.commit()
+    return {"ok": True, "msg": "提醒已完成"}
+
+
+# ── 提醒自动生成调度器 ──
+async def reminder_auto_scheduler():
+    """后台定时任务：每120秒扫描自动生成跟进提醒"""
+    while True:
+        await asyncio.sleep(120)
+        try:
+            db = SessionLocal()
+            now = _now()
+
+            # 1. 新线索未触达预警 (>24h无跟进，默认触发)
+            threshold_24h = now - datetime.timedelta(hours=24)
+            unreached_leads = db.query(Lead).filter(
+                Lead.lead_status == LEAD_STATUS_PRIVATE,
+                Lead.follow_count == 0,
+                Lead.created_at < threshold_24h,
+            ).all()
+            for lead in unreached_leads:
+                existing = db.query(FollowupReminder).filter(
+                    FollowupReminder.lead_id == lead.id,
+                    FollowupReminder.reminder_type == "unreached",
+                    FollowupReminder.is_completed == False,
+                ).first()
+                if not existing:
+                    db.add(FollowupReminder(
+                        lead_id=lead.id,
+                        reminder_type="unreached",
+                        content=f"【未触达预警】新线索[{lead.company_name}]已指派/新建超过24小时未触达，请及时跟进培育。",
+                        remind_at=now,
+                        created_by="系统",
+                    ))
+
+            # 2. 长期未跟进预警 (>14天无跟进)
+            threshold_14d = now - datetime.timedelta(days=14)
+            long_stale = db.query(Lead).filter(
+                Lead.lead_status == LEAD_STATUS_PRIVATE,
+                Lead.last_followed < threshold_14d,
+            ).all()
+            for lead in long_stale:
+                existing = db.query(FollowupReminder).filter(
+                    FollowupReminder.lead_id == lead.id,
+                    FollowupReminder.reminder_type == "long_idle",
+                    FollowupReminder.is_completed == False,
+                ).first()
+                if not existing:
+                    db.add(FollowupReminder(
+                        lead_id=lead.id,
+                        reminder_type="long_idle",
+                        content=f"【长期未跟进】线索[{lead.company_name}]已超过14天无销售动作，请尽快跟进。",
+                        remind_at=now,
+                        created_by="系统",
+                    ))
+
+            # 3. 货量下滑预警 (合作中客户 MoM跌超30%)
+            declining_custs = db.query(Customer).filter(
+                Customer.lifecycle_status.in_(STAGE_STATUS_MAP.get(STAGE_COOPERATING, [])),
+                Customer.volume_mom <= -30,
+                Customer.volume_mom > -100,
+            ).all()
+            for cust in declining_custs:
+                existing = db.query(FollowupReminder).filter(
+                    FollowupReminder.customer_id == cust.id,
+                    FollowupReminder.reminder_type == "volume_drop",
+                    FollowupReminder.is_completed == False,
+                ).first()
+                if not existing:
+                    db.add(FollowupReminder(
+                        customer_id=cust.id,
+                        reminder_type="volume_drop",
+                        content=f"【货量异常预警】客户[{cust.company_name}]本月发货环比下滑{abs(cust.volume_mom):.1f}%，可能存在转投同行风险，请加急维护！",
+                        remind_at=now,
+                        created_by="系统",
+                    ))
+
+            # 4. 账期风控预警 (欠款>0 且账龄>=25天)
+            credits = db.query(CreditInfo).filter(
+                CreditInfo.balance_due > 0,
+                CreditInfo.days_aged >= 25,
+            ).all()
+            for cr in credits:
+                cust = db.query(Customer).filter(Customer.id == cr.customer_id).first()
+                if cust and cust.lifecycle_status in STAGE_STATUS_MAP.get(STAGE_COOPERATING, []):
+                    existing = db.query(FollowupReminder).filter(
+                        FollowupReminder.customer_id == cr.customer_id,
+                        FollowupReminder.reminder_type == "credit_risk",
+                        FollowupReminder.is_completed == False,
+                    ).first()
+                    if not existing:
+                        db.add(FollowupReminder(
+                            customer_id=cr.customer_id,
+                            reminder_type="credit_risk",
+                            content=f"【风控红线预警】合作客户[{cust.company_name}]当前欠款{cr.balance_due/10000:.1f}万，账龄已达{cr.days_aged}天，请及时催收或调整走货额度。",
+                            remind_at=now,
+                            created_by="系统",
+                        ))
+
+            # 5. 流失挽回复盘提醒 (进入流失14天)
+            threshold_churn_14d = now - datetime.timedelta(days=14)
+            churned = db.query(Customer).filter(
+                Customer.lifecycle_status == STATUS_CHURNED,
+                Customer.status_changed_at < threshold_churn_14d,
+            ).all()
+            for cust in churned:
+                recent_follow = db.query(ActivityLog).filter(
+                    ActivityLog.customer_id == cust.id,
+                    ActivityLog.created_at >= threshold_churn_14d,
+                ).first()
+                if not recent_follow:
+                    existing = db.query(FollowupReminder).filter(
+                        FollowupReminder.customer_id == cust.id,
+                        FollowupReminder.reminder_type == "churn_review",
+                        FollowupReminder.is_completed == False,
+                    ).first()
+                    if not existing:
+                        db.add(FollowupReminder(
+                            customer_id=cust.id,
+                            reminder_type="churn_review",
+                            content=f"【挽回提醒】客户[{cust.company_name}]已流失14天，请及时录入流失主因，或尝试制定挽回方案。",
+                            remind_at=now,
+                            created_by="系统",
+                        ))
+
+            # 6. 报价追单提醒 (>3天未签单)
+            threshold_quote_3d = now - datetime.timedelta(days=3)
+            stale_quotations = db.query(Quotation).filter(
+                Quotation.status == 'sent',
+                Quotation.created_at < threshold_quote_3d,
+            ).all()
+            for q in stale_quotations:
+                cust = db.query(Customer).filter(Customer.id == q.customer_id).first()
+                if cust and cust.lifecycle_status in STAGE_STATUS_MAP.get(STAGE_QUOTED, []):
+                    existing = db.query(FollowupReminder).filter(
+                        FollowupReminder.customer_id == q.customer_id,
+                        FollowupReminder.reminder_type == "quote_follow",
+                        FollowupReminder.is_completed == False,
+                    ).first()
+                    if not existing:
+                        db.add(FollowupReminder(
+                            customer_id=q.customer_id,
+                            reminder_type="quote_follow",
+                            content=f"【报价追单提醒】您给[{cust.company_name}]发出的报价已过3天，请及时追单了解竞争情况。",
+                            remind_at=now,
+                            created_by="系统",
+                        ))
+
+            # 7. 逾期任务滚存 (未处理提醒超过23:59跨天自动标记逾期)
+            yesterday_reminders = db.query(FollowupReminder).filter(
+                FollowupReminder.is_completed == False,
+                FollowupReminder.is_snoozed == False,
+                FollowupReminder.remind_at < now.replace(hour=0, minute=0, second=0, microsecond=0),
+            ).all()
+            for r in yesterday_reminders:
+                r.overdue_days = (now - r.remind_at).days + 1
+
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"⚠ 提醒调度器异常: {e}")
 
 @app.get("/api/leads/list")
 def api_lead_list(
@@ -621,11 +894,6 @@ def api_lead_list(
     now = _now()
     result = []
     for l in leads:
-        # 计算回收倒计时
-        countdown = None
-        if l.lead_status == LEAD_STATUS_PRIVATE and l.reclaim_deadline:
-            delta = l.reclaim_deadline - now
-            countdown = max(0, int(delta.total_seconds() / 3600))
         result.append({
             "id": l.id, "company_name": l.company_name,
             "contact_name": l.contact_name, "contact_mobile": l.contact_mobile,
@@ -637,7 +905,6 @@ def api_lead_list(
             "last_followed": str(l.last_followed) if l.last_followed else None,
             "next_follow_at": str(l.next_follow_at) if l.next_follow_at else None,
             "created_at": str(l.created_at),
-            "reclaim_countdown_hours": countdown,
             "source": l.source,
             "country": l.country,
         })
@@ -674,11 +941,12 @@ def api_lead_detail(lead_id: int, db: Session = Depends(get_db)):
     follow_ups = db.query(FollowUp).filter(
         FollowUp.lead_id == lead_id
     ).order_by(FollowUp.created_at.desc()).all()
-    now = _now()
-    countdown = None
-    if l.lead_status == LEAD_STATUS_PRIVATE and l.reclaim_deadline:
-        delta = l.reclaim_deadline - now
-        countdown = max(0, int(delta.total_seconds() / 3600))
+    # 获取待处理跟进提醒
+    reminders = db.query(FollowupReminder).filter(
+        FollowupReminder.lead_id == lead_id,
+        FollowupReminder.is_completed == False,
+        FollowupReminder.is_snoozed == False,
+    ).order_by(FollowupReminder.remind_at.asc()).all()
     return {
         "ok": True,
         "lead": {
@@ -694,18 +962,24 @@ def api_lead_detail(lead_id: int, db: Session = Depends(get_db)):
             "follow_count": l.follow_count,
             "last_followed": str(l.last_followed) if l.last_followed else None,
             "next_follow_at": str(l.next_follow_at) if l.next_follow_at else None,
-            "reclaim_deadline": str(l.reclaim_deadline) if l.reclaim_deadline else None,
-            "reclaim_countdown_hours": countdown,
             "created_at": str(l.created_at),
             "converted_at": str(l.converted_at) if l.converted_at else None,
             "converted_to_type": l.converted_to_type,
         },
         "follow_ups": [{
             "id": f.id, "status": f.status, "content": f.content,
+            "image_urls": f.image_urls,
             "next_follow_at": str(f.next_follow_at) if f.next_follow_at else None,
             "created_by": f.created_by,
             "created_at": str(f.created_at),
         } for f in follow_ups],
+        "reminders": [{
+            "id": r.id, "reminder_type": r.reminder_type, "content": r.content,
+            "remind_at": str(r.remind_at), "is_completed": r.is_completed,
+            "is_snoozed": r.is_snoozed, "snoozed_until": str(r.snoozed_until) if r.snoozed_until else None,
+            "overdue_days": r.overdue_days,
+            "created_by": r.created_by, "created_at": str(r.created_at),
+        } for r in reminders],
     }
 
 
@@ -861,6 +1135,20 @@ def api_lead_claim(
     return {"ok": True, "msg": f"认领成功，请在{n_days}天内完成首次跟进，已同步至客户与商机"}
 
 
+@app.post("/api/upload/follow-up-image")
+async def upload_follow_up_image(file: UploadFile = File(...)):
+    """上传跟进图片"""
+    import uuid
+    ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+    filename = f"followup_{uuid.uuid4().hex[:12]}.{ext}"
+    upload_dir = os.path.join(_BASE_DIR, "static", "uploads")
+    filepath = os.path.join(upload_dir, filename)
+    content = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(content)
+    return {"ok": True, "url": f"/static/uploads/{filename}"}
+
+
 @app.post("/api/leads/{lead_id}/follow-up")
 def api_lead_follow_up(
     lead_id: int, data: FollowUpData, db: Session = Depends(get_db)
@@ -905,9 +1193,18 @@ def api_lead_follow_up(
             created_by=fu.created_by,
         ))
 
+    # 如果设置了下次跟进时间，自动创建跟进提醒
+    if nft and nft > _now():
+        db.add(FollowupReminder(
+            lead_id=lead_id,
+            reminder_type="schedule",
+            content=f"预约跟进 - {data.content[:100]}",
+            remind_at=nft,
+            created_by=data.created_by or lead.owner or "",
+        ))
     db.commit()
     db.refresh(fu)
-    return {"ok": True, "follow_up_id": fu.id, "msg": "跟进记录已保存，回收倒计时已重置"}
+    return {"ok": True, "follow_up_id": fu.id, "msg": "跟进记录已保存"}
 
 
 @app.post("/api/leads/{lead_id}/convert")
@@ -1076,16 +1373,74 @@ def api_get_enums():
 
 @app.get("/api/customers/list")
 def api_customer_list(
-    status: str = Query(None),
+    stage: str = Query(None, comment="4-stage filter: developing/quoted/cooperating/churned"),
+    sub_tab: str = Query(None, comment="sub-tab: due_today/new_unreached/long_idle / active/declining/credit_risk / in_protection/pool/open"),
     level: str = Query(None),
-    health: str = Query(None),
     keyword: str = Query(None),
     db: Session = Depends(get_db),
 ):
-    """客户列表 (PRD §4): 支持状态Tab/等级/健康度筛选"""
+    """客户列表 (PRD V2.1): 支持4阶段Tab + 每阶段二级筛选"""
     q = db.query(Customer)
-    if status:
-        q = q.filter(Customer.lifecycle_status == status)
+    now = _now()
+
+    # 4阶段筛选
+    if stage:
+        statuses = STAGE_STATUS_MAP.get(stage, [])
+        if statuses:
+            q = q.filter(Customer.lifecycle_status.in_(statuses))
+
+    # 二级子Tab筛选
+    if sub_tab and stage:
+        if stage == STAGE_DEVELOPING:
+            if sub_tab == "due_today":
+                # 到达跟进提醒时间的线索
+                q = q.filter(Customer.next_follow_at <= now)
+            elif sub_tab == "new_unreached":
+                # 24小时内新建但未跟进
+                threshold = now - datetime.timedelta(hours=24)
+                q = q.filter(Customer.created_at >= threshold, Customer.last_followed == None)
+            elif sub_tab == "long_idle":
+                # 超过14天未跟进
+                threshold = now - datetime.timedelta(days=14)
+                q = q.filter(Customer.last_followed < threshold)
+        elif stage == STAGE_QUOTED:
+            if sub_tab == "high_win":
+                # 高赢率商机 (>=70%)
+                q = q.join(Opportunity, Customer.id == Opportunity.customer_id, isouter=True).filter(
+                    Opportunity.win_probability >= 70
+                )
+            elif sub_tab == "expired":
+                # 报价已逾期 - 检查关联报价单是否过期
+                q = q.join(Quotation, Customer.id == Quotation.customer_id, isouter=True).filter(
+                    Quotation.valid_until < now, Quotation.status == 'sent'
+                )
+        elif stage == STAGE_COOPERATING:
+            if sub_tab == "active":
+                # 近30天有活跃运单
+                threshold = now - datetime.timedelta(days=30)
+                q = q.join(Order, Customer.id == Order.customer_id, isouter=True).filter(
+                    Order.created_at >= threshold
+                ).distinct()
+            elif sub_tab == "declining":
+                # 货量下滑预警 (MoM跌超30%)
+                q = q.filter(Customer.volume_mom <= -30, Customer.volume_mom > -100)
+            elif sub_tab == "credit_risk":
+                # 信用异常 (欠款且账龄>25天)
+                q = q.join(CreditInfo, Customer.id == CreditInfo.customer_id, isouter=True).filter(
+                    CreditInfo.balance_due > 0, CreditInfo.days_aged > 25
+                )
+        elif stage == STAGE_CHURNED:
+            if sub_tab == "in_protection":
+                # 15天内新流失 (保护期内)
+                threshold = now - datetime.timedelta(days=15)
+                q = q.filter(Customer.status_changed_at >= threshold, Customer.lifecycle_status == STATUS_CHURNED)
+            elif sub_tab == "pool":
+                # 公海流失池
+                q = q.filter(Customer.lifecycle_status == STATUS_CHURNED, Customer.owner == None)
+            elif sub_tab == "blacklist":
+                # 黑名单客户
+                q = q.filter(Customer.lifecycle_status == STATUS_DISQUALIFIED)
+
     if level:
         q = q.filter(Customer.customer_level == level)
     if keyword:
@@ -1099,6 +1454,7 @@ def api_customer_list(
             "id": c.id, "lead_id": c.lead_id,
             "company_name": c.company_name, "contact_name": c.contact_name,
             "phone": c.phone, "email": c.email, "country": c.country,
+            "customer_type": c.customer_type or "直客",
             "main_category": c.main_category,
             "shipping_frequency": c.shipping_frequency,
             "usual_routes": c.usual_routes,
@@ -1115,7 +1471,7 @@ def api_customer_list(
             "owner": c.owner,
             "created_at": str(c.created_at),
         })
-    # 附上每个客户的最新跟进记录
+    # 附上每个客户的最新跟进记录 + 信用信息 + 最新运单 + 流失数据
     if result:
         cust_ids = [r["id"] for r in result]
         latest_acts = db.query(ActivityLog).filter(
@@ -1125,17 +1481,35 @@ def api_customer_list(
         for a in latest_acts:
             if a.customer_id not in act_map:
                 act_map[a.customer_id] = a
+        credits = db.query(CreditInfo).filter(CreditInfo.customer_id.in_(cust_ids)).all()
+        credit_map = {cr.customer_id: cr for cr in credits}
+        orders = db.query(Order).filter(Order.customer_id.in_(cust_ids)).order_by(desc(Order.created_at)).all()
+        order_map = {}
+        for o in orders:
+            if o.customer_id not in order_map:
+                order_map[o.customer_id] = o
         for r in result:
             act = act_map.get(r["id"])
-            if act:
-                r["latest_follow"] = {
-                    "type": act.activity_type,
-                    "content": act.content,
-                    "created_at": str(act.created_at),
-                    "created_by": act.created_by,
-                }
-            else:
-                r["latest_follow"] = None
+            r["latest_follow"] = {"type": act.activity_type, "content": act.content,
+                "created_at": str(act.created_at), "created_by": act.created_by} if act else None
+            cr = credit_map.get(r["id"])
+            r["credit"] = {"credit_score": cr.credit_score, "balance_due": cr.balance_due, "days_aged": cr.days_aged} if cr else None
+            lo = order_map.get(r["id"])
+            r["latest_order"] = {"tracking_number": lo.tracking_number, "status": lo.status, "route_detail": lo.route_detail} if lo else None
+            # 流失指标 (已流失/已归档时)
+            if r["lifecycle_status"] in (STATUS_CHURNED, STATUS_DISQUALIFIED):
+                churn_act = db.query(ActivityLog).filter(
+                    ActivityLog.customer_id == r["id"],
+                    ActivityLog.activity_type == 'status_change',
+                    ActivityLog.status_to.in_([STATUS_CHURNED, STATUS_DISQUALIFIED])
+                ).order_by(desc(ActivityLog.created_at)).first()
+                r["loss_reason"] = churn_act.content if churn_act else None
+                r["days_inactive"] = (now - (churn_act.created_at if churn_act else c.created_at)).days if churn_act or c.created_at else None
+                # 历史总营收
+                hist_rev = db.query(func.sum(Order.total_price)).filter(
+                    Order.customer_id == r["id"], Order.status.in_(['delivered', 'arrived'])
+                ).scalar() or 0
+                r["total_historical_revenue"] = hist_rev
     return {"ok": True, "customers": result, "total": len(result)}
 
 
@@ -1240,6 +1614,7 @@ def api_customer_add_activity(
     cid: int,
     activity_type: str = Query("call"),
     content: str = Query(...),
+    image_urls: str = Query(""),
     created_by: str = Query("张晓明"),
     db: Session = Depends(get_db),
 ):
@@ -1254,6 +1629,7 @@ def api_customer_add_activity(
         customer_id=cid,
         activity_type=activity_type,
         content=content.strip(),
+        image_urls=image_urls.strip() or None,
         created_by=created_by,
     )
     db.add(log)
@@ -1310,7 +1686,8 @@ def get_customer(cid: int, db: Session = Depends(get_db)):
         "credit": {"credit_score": credit.credit_score, "credit_limit": credit.credit_limit,
                    "balance_due": credit.balance_due, "days_aged": credit.days_aged} if credit else None,
         "activities": [{"id": a.id, "activity_type": a.activity_type,
-                        "content": a.content, "created_by": a.created_by,
+                        "content": a.content, "image_urls": a.image_urls,
+                        "created_by": a.created_by,
                         "created_at": str(a.created_at)} for a in activities],
     }
 
@@ -1574,6 +1951,14 @@ def analytics_summary(db: Session = Depends(get_db)):
     warning = db.query(Customer).filter(Customer.health_score.between(60, 79)).count()
     critical = db.query(Customer).filter(Customer.health_score < 60).count()
 
+    # PRD V2.1: 4阶段客户计数
+    stage_counts = {}
+    for skey, slist in STAGE_STATUS_MAP.items():
+        stage_counts[skey] = db.query(Customer).filter(Customer.lifecycle_status.in_(slist)).count()
+    # 额外: 未转化的线索也算开发中
+    lead_developing = db.query(Lead).filter(Lead.lead_status.in_([LEAD_STATUS_PUBLIC, LEAD_STATUS_PRIVATE])).count()
+    stage_counts[STAGE_DEVELOPING] = stage_counts.get(STAGE_DEVELOPING, 0) + lead_developing
+
     return {
         "ok": True,
         "cards": [
@@ -1587,6 +1972,7 @@ def analytics_summary(db: Session = Depends(get_db)):
             {"name": "注意(60-79)", "value": warning, "color": "#f59e0b"},
             {"name": "预警(<60)", "value": critical, "color": "#ef4444"},
         ],
+        "stage_counts": stage_counts,
     }
 
 

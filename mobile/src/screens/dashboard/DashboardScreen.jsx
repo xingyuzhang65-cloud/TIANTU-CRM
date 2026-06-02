@@ -14,12 +14,14 @@ import { useAuth } from '../../context/AuthContext';
 const SCREEN_W = Dimensions.get('window').width;
 const BANNER_W = SCREEN_W - 32;
 
+const BANNER_IMG_BASE = 'http://localhost:8000/static/uploads';
+
 const BANNERS = [
-  { id: '1', title: '美森快船 · 限时特惠', sub: '上海 → 洛杉矶  12天极速达', tag: '海运特惠', color: '#2563eb', grad: ['#1e40af', '#3b82f6'], image: 'https://source.unsplash.com/800x400/?container+cargo+ship+port&sig=101', detail: '美森快船6月特惠：华东-美西 12天极速达\n\n📦 20GP ¥18,000起 ｜ 40GP ¥28,000起\n📦 40HQ ¥32,000起\n\n🎁 满10柜赠1柜\n📅 活动截止：2026年6月30日\n☎️ 联系专属客服锁定舱位' },
-  { id: '2', title: '中欧班列 · 旺季保舱', sub: '西安 → 汉堡 / 杜伊斯堡  18天', tag: '铁运专线', color: '#ea580c', grad: ['#9a3412', '#f97316'], image: 'https://source.unsplash.com/800x400/?freight+train+railway&sig=202', detail: '中欧班列·长安号 6月保舱计划\n\n🚂 西安→汉堡 18天 ｜ 西安→杜伊斯堡 19天\n\n📦 40HQ ¥42,000起（含两端拖车）\n🎁 签约年框客户享9折\n📅 活动截止：2026年7月15日\n☎️ 舱位有限，先到先得' },
-  { id: '3', title: '东南亚空派 · 48h极速', sub: '深圳/广州 → 曼谷/河内/雅加达', tag: '空运快线', color: '#16a34a', grad: ['#166534', '#22c55e'], image: 'https://source.unsplash.com/800x400/?cargo+plane+airport&sig=303', detail: '东南亚空派特快专线\n\n✈️ 深圳/广州直飞东南亚各枢纽\n⏱ 48小时极速派送\n\n📦 ¥8.5/KG起（含燃油）\n📦 100KG+ ¥7.2/KG\n🎁 首单立减¥500\n📅 长期有效\n☎️ 询价即享专属方案' },
-  { id: '4', title: '美线FBA · 一站式入仓', sub: '全国30城揽收 → 美国FBA仓库', tag: 'FBA头程', color: '#7c3aed', grad: ['#5b21b6', '#a78bfa'], image: 'https://source.unsplash.com/800x400/?warehouse+logistics+storage&sig=404', detail: '亚马逊FBA头程运输\n\n🚢 海派/空派/快递三种渠道\n📦 全国30+城市上门揽收\n\n🏭 覆盖ONT8 / LAX9 / LGB8等热门仓库\n💰 海派 ¥6.5/KG起\n🎁 新客首票免操作费\n📅 长期有效\n☎️ 专属FBA顾问一对一服务' },
-  { id: '5', title: '卡航中亚 · 陆运新通道', sub: '喀什 → 比什凯克 / 塔什干  7天', tag: '卡航陆运', color: '#f59e0b', grad: ['#b45309', '#fbbf24'], image: 'https://source.unsplash.com/800x400/?truck+highway+transport&sig=505', detail: '中亚卡航陆运专线\n\n🚛 喀什口岸出境\n📍 比什凯克 7天 ｜ 塔什干 9天\n\n📦 整车/拼车均可\n💰 拼车 ¥3,200/方起\n🎁 首次合作享95折\n📅 活动截止：2026年8月31日\n☎️ 中亚线路专属客服' },
+  { id: '1', title: '美森快船 · 限时特惠', sub: '上海 → 洛杉矶  12天极速达', tag: '海运特惠', color: '#2563eb', grad: ['#1e40af', '#3b82f6'], image: `${BANNER_IMG_BASE}/banner_ship.jpg`, detail: '美森快船6月特惠：华东-美西 12天极速达\n\n📦 20GP ¥18,000起 ｜ 40GP ¥28,000起\n📦 40HQ ¥32,000起\n\n🎁 满10柜赠1柜\n📅 活动截止：2026年6月30日\n☎️ 联系专属客服锁定舱位' },
+  { id: '2', title: '中欧班列 · 旺季保舱', sub: '西安 → 汉堡 / 杜伊斯堡  18天', tag: '铁运专线', color: '#ea580c', grad: ['#9a3412', '#f97316'], image: `${BANNER_IMG_BASE}/banner_train.jpg`, detail: '中欧班列·长安号 6月保舱计划\n\n🚂 西安→汉堡 18天 ｜ 西安→杜伊斯堡 19天\n\n📦 40HQ ¥42,000起（含两端拖车）\n🎁 签约年框客户享9折\n📅 活动截止：2026年7月15日\n☎️ 舱位有限，先到先得' },
+  { id: '3', title: '东南亚空派 · 48h极速', sub: '深圳/广州 → 曼谷/河内/雅加达', tag: '空运快线', color: '#16a34a', grad: ['#166534', '#22c55e'], image: `${BANNER_IMG_BASE}/banner_plane.jpg`, detail: '东南亚空派特快专线\n\n✈️ 深圳/广州直飞东南亚各枢纽\n⏱ 48小时极速派送\n\n📦 ¥8.5/KG起（含燃油）\n📦 100KG+ ¥7.2/KG\n🎁 首单立减¥500\n📅 长期有效\n☎️ 询价即享专属方案' },
+  { id: '4', title: '美线FBA · 一站式入仓', sub: '全国30城揽收 → 美国FBA仓库', tag: 'FBA头程', color: '#7c3aed', grad: ['#5b21b6', '#a78bfa'], image: `${BANNER_IMG_BASE}/banner_warehouse.jpg`, detail: '亚马逊FBA头程运输\n\n🚢 海派/空派/快递三种渠道\n📦 全国30+城市上门揽收\n\n🏭 覆盖ONT8 / LAX9 / LGB8等热门仓库\n💰 海派 ¥6.5/KG起\n🎁 新客首票免操作费\n📅 长期有效\n☎️ 专属FBA顾问一对一服务' },
+  { id: '5', title: '卡航中亚 · 陆运新通道', sub: '喀什 → 比什凯克 / 塔什干  7天', tag: '卡航陆运', color: '#f59e0b', grad: ['#b45309', '#fbbf24'], image: `${BANNER_IMG_BASE}/banner_truck.jpg`, detail: '中亚卡航陆运专线\n\n🚛 喀什口岸出境\n📍 比什凯克 7天 ｜ 塔什干 9天\n\n📦 整车/拼车均可\n💰 拼车 ¥3,200/方起\n🎁 首次合作享95折\n📅 活动截止：2026年8月31日\n☎️ 中亚线路专属客服' },
 ];
 
 export default function DashboardScreen() {

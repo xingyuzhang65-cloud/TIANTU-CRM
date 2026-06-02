@@ -319,6 +319,12 @@ function showQuickFollowUp(cid, companyName) {
     + '<option value="visit">🏢 拜访</option>'
     + '</select>';
   html += '<textarea id="fuContent" rows="4" placeholder="跟进内容描述..." style="width:100%;margin-bottom:12px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical;"></textarea>';
+  html += '<div style="margin-bottom:12px;">'
+    + '<label style="font-size:13px;display:block;margin-bottom:4px;">图片附件（可选）:</label>'
+    + '<input type="file" id="fuImages" multiple accept="image/*" style="font-size:13px;" onchange="previewCustFollowImages(this)">'
+    + '<div id="fuImagePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>'
+    + '<input type="hidden" id="fuImageUrls" value="">'
+    + '</div>';
   html += '<div class="modal-actions">'
     + '<button class="btn btn-outline" onclick="closeModal()">取消</button>'
     + '<button class="btn btn-primary" onclick="doQuickFollowUp(' + cid + ')">保存跟进</button>'
@@ -326,13 +332,38 @@ function showQuickFollowUp(cid, companyName) {
   openModal(html);
 }
 
+async function previewCustFollowImages(input) {
+  var preview = document.getElementById('fuImagePreview');
+  var urlsField = document.getElementById('fuImageUrls');
+  preview.innerHTML = '';
+  var urls = [];
+  for (var i = 0; i < input.files.length; i++) {
+    var file = input.files[i];
+    var formData = new FormData();
+    formData.append('file', file);
+    try {
+      var r = await fetch('/api/upload/follow-up-image', { method: 'POST', body: formData }).then(function(res){return res.json();});
+      if (r.ok) {
+        urls.push(r.url);
+        var img = document.createElement('img');
+        img.src = r.url;
+        img.style.cssText = 'width:72px;height:72px;border-radius:6px;object-fit:cover;';
+        preview.appendChild(img);
+      }
+    } catch(e) {}
+  }
+  urlsField.value = JSON.stringify(urls);
+}
+
 async function doQuickFollowUp(cid) {
   var content = document.getElementById('fuContent').value.trim();
   if (!content) return showToast('请输入跟进内容', 'error');
   var actType = document.getElementById('fuActType').value;
+  var imageUrls = document.getElementById('fuImageUrls').value || '';
   var params = new URLSearchParams();
   params.set('activity_type', actType);
   params.set('content', content);
+  params.set('image_urls', imageUrls);
   params.set('created_by', '张晓明');
   var r = await fetch('/api/customer/' + cid + '/add-activity?' + params.toString(), {method:'POST'}).then(function(res){return res.json();});
   if (r.ok) {

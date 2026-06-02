@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
-  ActivityIndicator, Alert, Dimensions,
+  ActivityIndicator, Alert, Dimensions, Modal, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
+import * as ImagePicker from 'expo-image-picker';
 import client from '../../api/client';
 import StatusBadge from '../../components/StatusBadge';
 
@@ -21,6 +22,9 @@ export default function CustomerDetailScreen({ route, navigation }) {
   const [showFollow, setShowFollow] = useState(false);
   const [followType, setFollowType] = useState('call');
   const [followContent, setFollowContent] = useState('');
+  const [followImages, setFollowImages] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
   const [activities, setActivities] = useState([]);
 
@@ -44,12 +48,61 @@ export default function CustomerDetailScreen({ route, navigation }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const resolveImageUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    return `http://localhost:8000${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets) {
+      setFollowImages(prev => [...prev, ...result.assets]);
+    }
+  };
+
+  const removeImage = (index) => {
+    setFollowImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadImages = async () => {
+    const urls = [];
+    for (const img of followImages) {
+      if (img.uri && !img.uri.startsWith('http')) {
+        try {
+          const formData = new FormData();
+          const filename = img.uri.split('/').pop() || 'photo.jpg';
+          if (img.uri.startsWith('blob:')) {
+            const blob = await (await fetch(img.uri)).blob();
+            formData.append('file', blob, filename);
+          } else {
+            formData.append('file', { uri: img.uri, name: filename, type: 'image/jpeg' });
+          }
+          const uploadRes = await fetch(`${client.defaults.baseURL}/api/upload/follow-up-image`, {
+            method: 'POST',
+            body: formData,
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.ok) urls.push(uploadData.url);
+        } catch {}
+      }
+    }
+    return urls;
+  };
+
   const handleFollow = async () => {
     if (!followContent.trim()) { Alert.alert('提示', '请输入内容'); return; }
+    setSaving(true);
     try {
-      const res = await client.post(`/api/customer/${customerId}/add-activity?activity_type=${followType}&content=${encodeURIComponent(followContent)}&created_by=张晓明`);
-      if (res.ok) { Alert.alert('成功', res.msg); setShowFollow(false); setFollowContent(''); fetchData(); }
+      const imageUrls = await uploadImages();
+      const res = await client.post(`/api/customer/${customerId}/add-activity?activity_type=${followType}&content=${encodeURIComponent(followContent)}&image_urls=${encodeURIComponent(JSON.stringify(imageUrls))}&created_by=张晓明`);
+      if (res.ok) { Alert.alert('成功', res.msg); setShowFollow(false); setFollowContent(''); setFollowImages([]); fetchData(); }
     } catch (e) { Alert.alert('错误', e.message); }
+    setSaving(false);
   };
 
   const handleAIInsight = async () => {
@@ -241,15 +294,40 @@ export default function CustomerDetailScreen({ route, navigation }) {
               <Ionicons name="add-circle-outline" size={22} color="#2563eb" />
             </TouchableOpacity>
           </View>
-          {activities.length > 0 ? activities.map((a, i) => (
+          {activities.length > 0 ? activities.map((a, i) => {
+            const isSystem = a.activity_type === 'status_change';
+            return (
               <View key={a.id || i} style={styles.followCard}>
-                <View style={styles.followHeader}>
-                  <Text style={styles.followBy}>{a.created_by}</Text>
-                  <Text style={styles.followTime}>{a.created_at?.slice(0, 16)}</Text>
+                <View style={styles.timelineRow}>
+                  <View style={[styles.timelineDot, isSystem && { backgroundColor: '#94a3b8' }]} />
+                  <View style={styles.timelineLine} />
                 </View>
-                <Text style={styles.followContent}>{a.content}</Text>
+                <View style={styles.followBody}>
+                  <View style={styles.followHeader}>
+                    <View style={styles.followMeta}>
+                      {isSystem && <Text style={styles.systemTag}>系统事件</Text>}
+                      <Text style={styles.followBy}>{a.created_by}</Text>
+                    </View>
+                    <Text style={styles.followTime}>{a.created_at?.slice(0, 16)}</Text>
+                  </View>
+                  <Text style={styles.followContent}>{a.content}</Text>
+                {a.image_urls ? (
+                  <View style={styles.followImages}>
+                    {(function() {
+                      try {
+                        const urls = JSON.parse(a.image_urls);
+                        return urls.map((url, idx) => (
+                          <TouchableOpacity key={idx} onPress={() => setPreviewImage(resolveImageUrl(url))}>
+                            <Image source={{ uri: resolveImageUrl(url) }} style={styles.followThumb} />
+                          </TouchableOpacity>
+                        ));
+                      } catch(e) { return null; }
+                    })()}
+                  </View>
+                ) : null}
+                </View>
               </View>
-            )) : null}
+            );}) : null}
           </View>
 
         {aiInsight && (
@@ -268,28 +346,69 @@ export default function CustomerDetailScreen({ route, navigation }) {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* FAB - Follow-up */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowFollow(!showFollow)}>
+      {/* FAB - opens centered modal */}
+      <TouchableOpacity style={styles.fab} onPress={() => { setFollowType('call'); setFollowContent(''); setFollowImages([]); setShowFollow(true); }}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
 
-      {showFollow && (
-        <View style={styles.followPanel}>
-          <View style={styles.followTypeRow}>
-            {['call', 'meeting', 'email', 'visit'].map(t => (
-              <TouchableOpacity key={t} style={[styles.typeChip, followType === t && styles.typeChipActive]} onPress={() => setFollowType(t)}>
-                <Text style={[styles.typeText, followType === t && styles.typeTextActive]}>
-                  {{ call: '📞 电话', meeting: '🤝 会议', email: '📧 邮件', visit: '🏢 拜访' }[t]}
-                </Text>
+      {/* Follow-up Modal — centered card */}
+      <Modal visible={showFollow} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.followModal}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowFollow(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
-            ))}
+              <Text style={styles.modalTitle}>添加跟进</Text>
+              <View style={{ width: 24 }} />
+            </View>
+            <ScrollView style={{ maxHeight: '100%' }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.followLabel}>跟进方式</Text>
+              <View style={styles.followTypeRow}>
+                {['call', 'meeting', 'email', 'visit'].map(t => (
+                  <TouchableOpacity key={t} style={[styles.typeChip, followType === t && styles.typeChipActive]} onPress={() => setFollowType(t)}>
+                    <Text style={[styles.typeText, followType === t && styles.typeTextActive]}>
+                      {{ call: '📞 电话', meeting: '🤝 会议', email: '📧 邮件', visit: '🏢 拜访' }[t]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.followLabel}>跟进内容</Text>
+              <TextInput style={styles.followInput} placeholder="输入跟进内容..." value={followContent} onChangeText={setFollowContent} multiline autoFocus />
+              <Text style={styles.followLabel}>图片附件（可选）</Text>
+              <View style={styles.imageGrid}>
+                {followImages.map((img, idx) => (
+                  <View key={idx} style={styles.imageWrapper}>
+                    <Image source={{ uri: img.uri }} style={styles.thumb} />
+                    <TouchableOpacity style={styles.removeImgBtn} onPress={() => removeImage(idx)}>
+                      <Ionicons name="close-circle" size={20} color="#dc2626" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.addImgBtn} onPress={pickImage}>
+                  <Ionicons name="images-outline" size={28} color="#94a3b8" />
+                  <Text style={styles.addImgText}>添加图片</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={[styles.followBtn, saving && { opacity: 0.5 }]} onPress={handleFollow} disabled={saving}>
+                <Text style={styles.followBtnText}>{saving ? '保存中...' : '保存跟进记录'}</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-          <TextInput style={styles.followInput} placeholder="输入跟进内容..." value={followContent} onChangeText={setFollowContent} multiline />
-          <TouchableOpacity style={styles.followBtn} onPress={handleFollow}>
-            <Text style={styles.followBtnText}>保存跟进</Text>
-          </TouchableOpacity>
         </View>
-      )}
+      </Modal>
+
+      {/* Image fullscreen preview */}
+      <Modal visible={!!previewImage} transparent animationType="fade">
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity style={styles.previewCloseBtn} onPress={() => setPreviewImage(null)}>
+            <Ionicons name="close-circle" size={36} color="#fff" />
+          </TouchableOpacity>
+          {previewImage ? (
+            <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -342,20 +461,44 @@ const styles = StyleSheet.create({
   aiText: { fontSize: 13, color: '#334155', lineHeight: 20, marginBottom: 2 },
   aiAction: { fontSize: 14, fontWeight: '600', color: '#2563eb', marginTop: 8 },
   fab: { position: 'absolute', right: 20, bottom: 30, width: 56, height: 56, borderRadius: 28, backgroundColor: '#2563eb', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 6 },
-  followPanel: { position: 'absolute', bottom: 100, left: 16, right: 16, backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },
-  followTypeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  // Modal — centered card
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  followModal: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 500, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a', flex: 1, textAlign: 'center' },
+  followLabel: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8, marginTop: 8 },
+  followTypeRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   typeChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#f1f5f9' },
   typeChipActive: { backgroundColor: '#2563eb' },
   typeText: { fontSize: 13, color: '#64748b' },
   typeTextActive: { color: '#fff' },
   followInput: { backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, fontSize: 14, minHeight: 60, borderWidth: 1, borderColor: '#e2e8f0', textAlignVertical: 'top' },
+  // Image picker
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  imageWrapper: { position: 'relative' },
+  thumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: '#f1f5f9' },
+  removeImgBtn: { position: 'absolute', top: -6, right: -6 },
+  addImgBtn: { width: 72, height: 72, borderRadius: 8, borderWidth: 1.5, borderColor: '#e2e8f0', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center' },
+  addImgText: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
   followBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12 },
   followBtnText: { color: '#fff', fontWeight: '600' },
 
-  // Follow-up history
-  followCard: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+  // Follow-up history — timeline
+  followCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, paddingVertical: 10, paddingRight: 12, marginBottom: 8 },
+  timelineRow: { width: 30, alignItems: 'center', paddingTop: 4 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2563eb', zIndex: 1 },
+  timelineLine: { flex: 1, width: 2, backgroundColor: '#e2e8f0', marginTop: -2 },
+  followBody: { flex: 1 },
+  followMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  systemTag: { fontSize: 10, fontWeight: '600', color: '#94a3b8', backgroundColor: '#f1f5f9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' },
+  followImages: { flexDirection: 'row', gap: 6, marginTop: 6 },
+  followThumb: { width: 64, height: 64, borderRadius: 6, backgroundColor: '#f1f5f9' },
   followHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   followBy: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
   followTime: { fontSize: 11, color: '#94a3b8' },
   followContent: { fontSize: 14, color: '#334155', lineHeight: 20 },
+  // Full image preview
+  previewOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  previewCloseBtn: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
+  previewImage: { width: '100%', height: '80%' },
 });

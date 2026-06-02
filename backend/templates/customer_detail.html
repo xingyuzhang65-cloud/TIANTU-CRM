@@ -248,6 +248,13 @@
         <span class="text-sm">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
       </div>
       <div style="font-size:13px;margin-top:4px;">{{ a.content }}</div>
+      {% if a.image_urls %}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        {% for url in a.image_urls | tojson | fromjson %}
+        <img src="{{ url }}" style="width:72px;height:72px;border-radius:6px;object-fit:cover;cursor:pointer;" onclick="previewFullImage('{{ url }}')" title="点击放大">
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="text-sm">操作人: {{ a.created_by }}</div>
     </div>
     {% endfor %}
@@ -359,19 +366,50 @@ function showFollowUpForm() {
     + '<option value="visit">🏢 拜访</option>'
     + '</select>'
     + '<textarea id="fuContent" rows="3" placeholder="跟进内容描述..." style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical;"></textarea>'
+    + '<div style="margin-bottom:8px;">'
+    + '<label style="font-size:13px;display:block;margin-bottom:4px;">图片附件（可选）:</label>'
+    + '<input type="file" id="fuImages" multiple accept="image/*" style="font-size:13px;" onchange="previewCustFollowImages(this)">'
+    + '<div id="fuImagePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>'
+    + '<input type="hidden" id="fuImageUrls" value="">'
+    + '</div>'
     + '<div style="display:flex;gap:8px;">'
     + '<button class="btn btn-primary btn-sm" onclick="doFollowUp()">保存跟进</button>'
     + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'followUpFormArea\').innerHTML=\'\'">取消</button>'
     + '</div></div>';
 }
 
+async function previewCustFollowImages(input) {
+  var preview = document.getElementById('fuImagePreview');
+  var urlsField = document.getElementById('fuImageUrls');
+  preview.innerHTML = '';
+  var urls = [];
+  for (var i = 0; i < input.files.length; i++) {
+    var file = input.files[i];
+    var formData = new FormData();
+    formData.append('file', file);
+    try {
+      var r = await fetch('/api/upload/follow-up-image', { method: 'POST', body: formData }).then(function(res){return res.json();});
+      if (r.ok) {
+        urls.push(r.url);
+        var img = document.createElement('img');
+        img.src = r.url;
+        img.style.cssText = 'width:72px;height:72px;border-radius:6px;object-fit:cover;';
+        preview.appendChild(img);
+      }
+    } catch(e) {}
+  }
+  urlsField.value = JSON.stringify(urls);
+}
+
 async function doFollowUp() {
   var content = document.getElementById('fuContent').value.trim();
   if (!content) return showToast('请输入跟进内容', 'error');
   var actType = document.getElementById('fuActType').value;
+  var imageUrls = document.getElementById('fuImageUrls').value || '';
   var params = new URLSearchParams();
   params.set('activity_type', actType);
   params.set('content', content);
+  params.set('image_urls', imageUrls);
   params.set('created_by', '{{ customer.owner or "张晓明" }}');
   var r = await fetch('/api/customer/' + custId + '/add-activity?' + params.toString(), {method:'POST'}).then(function(res){return res.json();});
   if (r.ok) {
@@ -398,6 +436,21 @@ async function getAIInsight(id) {
   html += '<p class="mt-2"><strong>AI建议:</strong> ' + r.risk_action + '</p>';
   html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
   openModal(html);
+}
+
+function previewFullImage(url) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:10000;display:flex;justify-content:center;align-items:center;cursor:pointer;';
+  overlay.onclick = function() { document.body.removeChild(overlay); };
+  var img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'max-width:95%;max-height:95%;object-fit:contain;';
+  var closeBtn = document.createElement('div');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:30px;right:30px;color:#fff;font-size:32px;cursor:pointer;';
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
 }
 </script>
 {% endblock %}

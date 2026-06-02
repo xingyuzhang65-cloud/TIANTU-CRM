@@ -42,37 +42,37 @@ STATUS_STAGE = {
     STATUS_CHURNED: "结束",
 }
 
-# ── PRD V2.0: 精简4阶段生命周期 ──
+# ── PRD V2.1: 精简4阶段生命周期 (开发中→已报价→合作中→已流失) ──
 STAGE_DEVELOPING = "developing"
-STAGE_NEGOTIATING = "negotiating"
+STAGE_QUOTED = "quoted"
 STAGE_COOPERATING = "cooperating"
-STAGE_ARCHIVED = "archived"
+STAGE_CHURNED = "churned"
 
-ALL_STAGES = [STAGE_DEVELOPING, STAGE_NEGOTIATING, STAGE_COOPERATING, STAGE_ARCHIVED]
+ALL_STAGES = [STAGE_DEVELOPING, STAGE_QUOTED, STAGE_COOPERATING, STAGE_CHURNED]
 
 STAGE_LABELS = {
     STAGE_DEVELOPING: "开发中",
-    STAGE_NEGOTIATING: "报价谈判",
+    STAGE_QUOTED: "已报价",
     STAGE_COOPERATING: "合作中",
-    STAGE_ARCHIVED: "已归档",
+    STAGE_CHURNED: "已流失",
 }
 
 # 旧状态 → 新4阶段映射
 STATUS_TO_STAGE = {
     STATUS_NEW: STAGE_DEVELOPING, STATUS_CONTACTED: STAGE_DEVELOPING,
-    STATUS_NURTURING: STAGE_NEGOTIATING, STATUS_QUOTED: STAGE_NEGOTIATING,
-    STATUS_NEGOTIATING: STAGE_NEGOTIATING,
+    STATUS_NURTURING: STAGE_QUOTED, STATUS_QUOTED: STAGE_QUOTED,
+    STATUS_NEGOTIATING: STAGE_QUOTED,
     STATUS_TRIAL: STAGE_COOPERATING, STATUS_ACTIVE: STAGE_COOPERATING,
     STATUS_RECEDING: STAGE_COOPERATING,
-    STATUS_DISQUALIFIED: STAGE_ARCHIVED, STATUS_CHURNED: STAGE_ARCHIVED,
+    STATUS_DISQUALIFIED: STAGE_CHURNED, STATUS_CHURNED: STAGE_CHURNED,
 }
 
 # 新阶段 → 包含的旧状态列表
 STAGE_STATUS_MAP = {
     STAGE_DEVELOPING: [STATUS_NEW, STATUS_CONTACTED],
-    STAGE_NEGOTIATING: [STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING],
+    STAGE_QUOTED: [STATUS_NURTURING, STATUS_QUOTED, STATUS_NEGOTIATING],
     STAGE_COOPERATING: [STATUS_TRIAL, STATUS_ACTIVE, STATUS_RECEDING],
-    STAGE_ARCHIVED: [STATUS_DISQUALIFIED, STATUS_CHURNED],
+    STAGE_CHURNED: [STATUS_DISQUALIFIED, STATUS_CHURNED],
 }
 
 # "合作中" 自动激活规则: 近90天有生效运单
@@ -83,9 +83,9 @@ WARNING_MOM_THRESHOLD = -20
 # 新阶段 → 默认旧状态 (手动切换时使用)
 STAGE_TO_DEFAULT_STATUS = {
     STAGE_DEVELOPING: STATUS_CONTACTED,
-    STAGE_NEGOTIATING: STATUS_QUOTED,
+    STAGE_QUOTED: STATUS_QUOTED,
     STAGE_COOPERATING: STATUS_ACTIVE,
-    STAGE_ARCHIVED: STATUS_DISQUALIFIED,
+    STAGE_CHURNED: STATUS_DISQUALIFIED,
 }
 
 # 状态流转规则: 当前状态 → 可流转到的下一个状态列表
@@ -174,6 +174,24 @@ class FollowUp(Base):
     created_by = Column(String(100))
     created_at = Column(DateTime, default=_now)
     lead = relationship("Lead", back_populates="follow_ups")
+
+
+# ── 1.15 跟进提醒 (PRD V1.1) ──
+class FollowupReminder(Base):
+    __tablename__ = "followup_reminders"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True, comment="关联线索")
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="关联客户")
+    reminder_type = Column(String(30), comment="manual/schedule/unreached/quote_follow/credit_risk/volume_drop/churn_review")
+    content = Column(Text, comment="提醒内容")
+    remind_at = Column(DateTime, comment="提醒时间")
+    is_completed = Column(Boolean, default=False, comment="是否已完成")
+    is_snoozed = Column(Boolean, default=False, comment="是否已延期")
+    snoozed_until = Column(DateTime, comment="延期到何时")
+    completed_at = Column(DateTime)
+    overdue_days = Column(Integer, default=0, comment="逾期天数")
+    created_by = Column(String(100))
+    created_at = Column(DateTime, default=_now)
 
 
 # ── 1.2 线索认领记录 (PRD: 每人每日认领上限) ──
@@ -373,6 +391,7 @@ class ActivityLog(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     activity_type = Column(String(30), comment="call/visit/meeting/email/quote/complaint/status_change")
     content = Column(Text)
+    image_urls = Column(Text, comment="图片附件JSON数组")
     # 状态流转记录
     status_from = Column(String(20))
     status_to = Column(String(20))

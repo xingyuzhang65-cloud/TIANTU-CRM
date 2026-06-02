@@ -393,6 +393,7 @@ async function openDetailModal(leadId) {
         + '<span class="badge badge-blue">' + (fu.status || '跟进') + '</span>'
         + '<span style="font-size:12px;color:var(--text-secondary);float:right;">' + (fu.created_at || '').slice(0,16).replace('T',' ') + '</span>'
         + '<p style="margin-top:8px;font-size:14px;">' + fu.content + '</p>'
+        + (fu.image_urls ? (function() { try { var imgs = JSON.parse(fu.image_urls); var h = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'; imgs.forEach(function(url) { h += '<img src="' + url + '" style="width:72px;height:72px;border-radius:6px;object-fit:cover;cursor:pointer;" onclick="previewFullImage(\'' + url + '\')" title="点击放大">'; }); return h + '</div>'; } catch(e) { return ''; } })() : '')
         + '<div class="meta"><span>跟进人: ' + (fu.created_by || '-') + '</span>'
         + (fu.next_follow_at ? '<span>下次跟进: ' + fu.next_follow_at.slice(0,16).replace('T',' ') + '</span>' : '')
         + '</div></div>';
@@ -417,10 +418,37 @@ function showFollowUpForm(leadId) {
     + '<label style="font-size:13px;">下次跟进时间:</label>'
     + '<input type="datetime-local" id="fuNextTime" style="padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;">'
     + '</div>'
+    + '<div style="margin-bottom:8px;">'
+    + '<label style="font-size:13px;display:block;margin-bottom:4px;">图片附件（可选）:</label>'
+    + '<input type="file" id="fuImages" multiple accept="image/*" style="font-size:13px;" onchange="previewFollowImages(this)">'
+    + '<div id="fuImagePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>'
+    + '<input type="hidden" id="fuImageUrls" value="">'
+    + '</div>'
     + '<div style="display:flex;gap:8px;">'
     + '<button class="btn btn-primary btn-sm" onclick="doFollowUp(' + leadId + ')">保存跟进</button>'
     + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'followUpFormArea\').innerHTML=\'\'">取消</button>'
     + '</div></div>';
+}
+
+async function previewFollowImages(input) {
+  var preview = document.getElementById('fuImagePreview');
+  var urlsField = document.getElementById('fuImageUrls');
+  preview.innerHTML = '';
+  var urls = [];
+  for (var i = 0; i < input.files.length; i++) {
+    var file = input.files[i];
+    var formData = new FormData();
+    formData.append('file', file);
+    var r = await fetch('/api/upload/follow-up-image', { method: 'POST', body: formData }).then(function(res){return res.json();});
+    if (r.ok) {
+      urls.push(r.url);
+      var img = document.createElement('img');
+      img.src = r.url;
+      img.style.cssText = 'width:72px;height:72px;border-radius:6px;object-fit:cover;';
+      preview.appendChild(img);
+    }
+  }
+  urlsField.value = JSON.stringify(urls);
 }
 
 async function doFollowUp(leadId) {
@@ -429,6 +457,7 @@ async function doFollowUp(leadId) {
   var data = {
     status: document.getElementById('fuStatus').value,
     content: content,
+    image_urls: document.getElementById('fuImageUrls').value || '',
     next_follow_at: document.getElementById('fuNextTime').value || null,
     created_by: '张晓明'
   };
@@ -478,6 +507,21 @@ async function manualReclaim() {
   var r = await apiPost('/api/leads/reclaim');
   showToast('回收完成，共回收 ' + r.reclaimed + ' 条线索至公海 (N=' + r.params.N_days + '天, M=' + r.params.M_days + '天)');
   setTimeout(function() { location.reload(); }, 1000);
+}
+
+function previewFullImage(url) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:10000;display:flex;justify-content:center;align-items:center;cursor:pointer;';
+  overlay.onclick = function() { document.body.removeChild(overlay); };
+  var img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'max-width:95%;max-height:95%;object-fit:contain;';
+  var closeBtn = document.createElement('div');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:30px;right:30px;color:#fff;font-size:32px;cursor:pointer;';
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
 }
 </script>
 {% endblock %}
