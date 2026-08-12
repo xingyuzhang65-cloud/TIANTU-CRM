@@ -5,7 +5,7 @@ import {
   ScrollView, Dimensions, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import client from '../api/client';
+import client, { resolveBackendUrl } from '../api/client';
 
 // Conditional import: expo-image-picker for native, file input for web
 let ImagePicker = null;
@@ -221,7 +221,7 @@ export default function MomentsFeed() {
   const renderMomentCard = ({ item: m }) => {
     const typeStyle = TYPE_COLORS[m.type] || TYPE_COLORS.DAILY;
     // Build full baseURL for images
-    const imageUrls = (m.media_urls || []).map(u => u.startsWith('http') ? u : `http://localhost:8000${u}`);
+    const imageUrls = (m.media_urls || []).map(resolveBackendUrl);
     return (
       <TouchableOpacity
         style={[styles.card, m.type === 'SYSTEM_KPI' && styles.cardKpi]}
@@ -276,7 +276,7 @@ export default function MomentsFeed() {
     );
   };
 
-  const detailImageUrls = detailMoment ? (detailMoment.media_urls || []).map(u => u.startsWith('http') ? u : `http://localhost:8000${u}`) : [];
+  const detailImageUrls = detailMoment ? (detailMoment.media_urls || []).map(resolveBackendUrl) : [];
 
   return (
     <View style={styles.container}>

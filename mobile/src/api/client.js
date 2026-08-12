@@ -24,15 +24,20 @@ const storage = {
   },
 };
 
-const BACKEND_TUNNEL = 'https://petite-planets-obey.loca.lt';
+export const PUBLIC_BACKEND_URL = 'https://frontpage-closing-snake-mirror.trycloudflare.com';
 const getBaseURL = () => {
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host.includes('loca.lt') || host.includes('github.io')) {
-      return BACKEND_TUNNEL;
+    if (host.includes('trycloudflare.com') || host.includes('github.io')) {
+      return PUBLIC_BACKEND_URL;
     }
   }
   return 'http://localhost:8000';
+};
+
+export const resolveBackendUrl = (url = '') => {
+  if (!url || url.startsWith('http')) return url;
+  return `${getBaseURL()}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
 const client = axios.create({

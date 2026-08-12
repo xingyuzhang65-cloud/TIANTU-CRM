@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import * as ImagePicker from 'expo-image-picker';
-import client from '../../api/client';
+import client, { resolveBackendUrl } from '../../api/client';
 import StatusBadge from '../../components/StatusBadge';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -51,7 +51,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
   const resolveImageUrl = (url) => {
     if (!url) return '';
     if (url.startsWith('http')) return url;
-    return `http://localhost:8000${url.startsWith('/') ? '' : '/'}${url}`;
+    return resolveBackendUrl(url);
   };
 
   const pickImage = async () => {

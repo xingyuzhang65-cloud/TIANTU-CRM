@@ -5,7 +5,7 @@ import {
   RefreshControl, Dimensions, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import client from '../../api/client';
+import client, { resolveBackendUrl } from '../../api/client';
 
 const TYPE_COLORS = {
   DAILY: { bg: '#eff6ff', text: '#2563eb', label: '日常' },
@@ -128,7 +128,7 @@ export default function MomentsScreen() {
     setPosting(false);
   };
 
-  const fullUrl = (u) => u?.startsWith('http') ? u : `http://localhost:8000${u}`;
+  const fullUrl = resolveBackendUrl;
 
   const renderItem = ({ item: m }) => {
     const ts = TYPE_COLORS[m.type] || TYPE_COLORS.DAILY;

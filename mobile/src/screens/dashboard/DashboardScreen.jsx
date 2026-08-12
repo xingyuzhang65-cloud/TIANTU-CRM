@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import client from '../../api/client';
+import client, { resolveBackendUrl } from '../../api/client';
 import StatCard from '../../components/StatCard';
 import ActivityTimeline from '../../components/ActivityTimeline';
 import MomentsFeed from '../../components/MomentsFeed';
@@ -14,7 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 const SCREEN_W = Dimensions.get('window').width;
 const BANNER_W = SCREEN_W - 32;
 
-const BANNER_IMG_BASE = 'http://localhost:8000/static/uploads';
+const BANNER_IMG_BASE = resolveBackendUrl('/static/uploads');
 
 const BANNERS = [
   { id: '1', title: '美森快船 · 限时特惠', sub: '上海 → 洛杉矶  12天极速达', tag: '海运特惠', color: '#2563eb', grad: ['#1e40af', '#3b82f6'], image: `${BANNER_IMG_BASE}/banner_ship.jpg`, detail: '美森快船6月特惠：华东-美西 12天极速达\n\n📦 20GP ¥18,000起 ｜ 40GP ¥28,000起\n📦 40HQ ¥32,000起\n\n🎁 满10柜赠1柜\n📅 活动截止：2026年6月30日\n☎️ 联系专属客服锁定舱位' },

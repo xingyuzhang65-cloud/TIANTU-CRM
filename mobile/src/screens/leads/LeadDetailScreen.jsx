@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import client from '../../api/client';
+import client, { resolveBackendUrl } from '../../api/client';
 import StatusBadge from '../../components/StatusBadge';
 
 const FOLLOW_STATUSES = ['未联系', '初步沟通', '意向强烈', '暂无意向', '无效信息'];
@@ -41,7 +41,7 @@ export default function LeadDetailScreen({ route, navigation }) {
   const resolveImageUrl = (url) => {
     if (!url) return '';
     if (url.startsWith('http')) return url;
-    return `http://localhost:8000${url.startsWith('/') ? '' : '/'}${url}`;
+    return resolveBackendUrl(url);
   };
 
   const pickImage = async () => {
