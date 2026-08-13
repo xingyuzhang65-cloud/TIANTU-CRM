@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨境物流CRM - ShareAI</title>
+<link rel="stylesheet" href="/TIANTU-CRM/admin/static/css/style.css">
+<script src="/TIANTU-CRM/admin/static/admin-pages.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>🚢 跨境物流CRM</h2>
+      <div class="sub">Powered by ShareAI 智能引擎</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="active">
+        <span class="icon">📊</span> 经营仪表盘
+      </a>
+      <a href="/leads" class="">
+        <span class="icon">🎯</span> 线索公海池
+      </a>
+      <a href="/customers" class="">
+        <span class="icon">👥</span> 客户管理与商机
+      </a>
+      <a href="/quotation" class="">
+        <span class="icon">💰</span> 报价管理
+      </a>
+      <a href="/tracking" class="">
+        <span class="icon">📍</span> 轨迹与客服
+      </a>
+      <a href="/risk" class="">
+        <span class="icon">🛡️</span> 风控授信
+      </a>
+      <a href="/analytics" class="">
+        <span class="icon">📈</span> 经营分析
+      </a>
+      <a href="/moments" class="">
+        <span class="icon">📱</span> 团队广场
+        <span class="sidebar-badge">NEW</span>
+      </a>
+      <a href="/ai-assistant" class="">
+        <span class="icon">🤖</span> AI智能助手
+        <span class="sidebar-badge">AI</span>
+      </a>
+    </nav>
+    <div style="position:absolute;bottom:20px;left:20px;right:20px;font-size:11px;color:rgba(255,255,255,.4);">
+      结合纷享销客 ShareAI · 天图架构
+    </div>
+  </aside>
+  <main class="main">
+    
+<h1 style="margin-bottom:20px;font-size:22px;">📊 经营仪表盘</h1>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">客户总数</div>
+    <div class="value">18</div>
+    <div class="sub">线索 8 · 合作客户 10</div>
+  </div>
+  <div class="stat-card success">
+    <div class="label">在途运单</div>
+    <div class="value">6</div>
+    <div class="sub">正常流转中</div>
+  </div>
+  <div class="stat-card accent">
+    <div class="label">累计营收</div>
+    <div class="value">14.4万</div>
+    <div class="sub">已确认报价单总额</div>
+  </div>
+  <div class="stat-card warning">
+    <div class="label">待处理报价</div>
+    <div class="value">0</div>
+    <div class="sub">需尽快跟进</div>
+  </div>
+  <div class="stat-card danger">
+    <div class="label">异常运单</div>
+    <div class="value">3</div>
+    <div class="sub">需立即处理</div>
+  </div>
+  <div class="stat-card warning">
+    <div class="label">超期应收</div>
+    <div class="value">37.5万</div>
+    <div class="sub">账龄超30天</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-header">📈 月度营收与运单趋势</div>
+    <div class="panel-body">
+      <canvas id="trendChart" height="220"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">📋 最近跟进动态</div>
+    <div class="panel-body" style="max-height:280px;overflow-y:auto;">
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            🎯 线索
+            <span class="badge badge-gray">call</span>
+          </strong>
+          <span class="text-sm">08-13 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">与陈总电话沟通，确认电池品类出货计划，每月约5-8个方，需要美森渠道</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">call</span>
+          </strong>
+          <span class="text-sm">08-13 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">提醒李经理当前欠款已超账期15天，已连续14天无新单，需跟进原因</div>
+        <div class="text-sm">操作人: 财务部-王会计</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">email</span>
+          </strong>
+          <span class="text-sm">08-13 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">发送Q2季度运输方案：美森主线+盐田备线，已确认</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">call</span>
+          </strong>
+          <span class="text-sm">08-13 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">确认圣诞季备货计划，需提前预订舱位</div>
+        <div class="text-sm">操作人: 李强</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">complaint</span>
+          </strong>
+          <span class="text-sm">08-13 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">客户反馈鹿特丹查验延误，影响交期，需要紧急协调</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">call</span>
+          </strong>
+          <span class="text-sm">08-12 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">确认TikTok Shop美国小包需求，客户希望先试跑20票轻小件</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">status_change</span>
+          </strong>
+          <span class="text-sm">08-11 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">新建客户，进入我的客户池</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="flex-between">
+          <strong style="font-size:13px;">
+            👥 客户
+            <span class="badge badge-gray">call</span>
+          </strong>
+          <span class="text-sm">08-08 14:07</span>
+        </div>
+        <div style="font-size:13px;margin-top:2px;">沟通新品充电宝运输资质要求，需UN38.3+MSDS文件，已协助客户准备</div>
+        <div class="text-sm">操作人: 张晓明</div>
+      </div>
+      
+    </div>
+  </div>
+</div>
+
+
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ── Modal utils ──
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Toast ──
+function showToast(msg, type='success') {
+  let el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;right:20px;z-index:999;padding:12px 20px;
+    border-radius:8px;color:#fff;font-size:14px;animation:fadeIn .3s;
+    background:${type==='error'?'#ef4444':'#10b981'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(() => el.remove(), 300); }, 2500);
+}
+
+// ── API helpers ──
+async function apiGet(url) {
+  let r = await fetch(url);
+  return r.json();
+}
+async function apiPost(url) {
+  let r = await fetch(url, {method:'POST'});
+  return r.json();
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: ["1\u6708", "2\u6708", "3\u6708", "4\u6708", "5\u6708"],
+    datasets: [
+      { label: '营收(万元)', data: [420, 380, 510, 590, 680], backgroundColor: '#2563eb',
+        yAxisID:'y', order:1, borderRadius:4 },
+      { label: '运单数', data: [28, 24, 33, 38, 45], borderColor: '#10b981',
+        backgroundColor:'rgba(16,185,129,.1)', type:'line', yAxisID:'y1', tension:.4, fill:true, order:0 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position:'bottom' } },
+    scales: { y: { title:{display:true,text:'万元'}, beginAtZero:true },
+              y1: { position:'right', title:{display:true,text:'票'}, beginAtZero:true, grid:{display:false} } }
+  }
+});
+</script>
+
+</body>
+</html>

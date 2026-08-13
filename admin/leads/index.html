@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨境物流CRM - ShareAI</title>
+<link rel="stylesheet" href="/TIANTU-CRM/admin/static/css/style.css">
+<script src="/TIANTU-CRM/admin/static/admin-pages.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>🚢 跨境物流CRM</h2>
+      <div class="sub">Powered by ShareAI 智能引擎</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="">
+        <span class="icon">📊</span> 经营仪表盘
+      </a>
+      <a href="/leads" class="active">
+        <span class="icon">🎯</span> 线索公海池
+      </a>
+      <a href="/customers" class="">
+        <span class="icon">👥</span> 客户管理与商机
+      </a>
+      <a href="/quotation" class="">
+        <span class="icon">💰</span> 报价管理
+      </a>
+      <a href="/tracking" class="">
+        <span class="icon">📍</span> 轨迹与客服
+      </a>
+      <a href="/risk" class="">
+        <span class="icon">🛡️</span> 风控授信
+      </a>
+      <a href="/analytics" class="">
+        <span class="icon">📈</span> 经营分析
+      </a>
+      <a href="/moments" class="">
+        <span class="icon">📱</span> 团队广场
+        <span class="sidebar-badge">NEW</span>
+      </a>
+      <a href="/ai-assistant" class="">
+        <span class="icon">🤖</span> AI智能助手
+        <span class="sidebar-badge">AI</span>
+      </a>
+    </nav>
+    <div style="position:absolute;bottom:20px;left:20px;right:20px;font-size:11px;color:rgba(255,255,255,.4);">
+      结合纷享销客 ShareAI · 天图架构
+    </div>
+  </aside>
+  <main class="main">
+    
+<style>
+/* ── 线索模块专用样式 ── */
+.tab-bar { display:flex; gap:0; margin-bottom:20px; background:var(--card); border-radius:var(--radius); padding:4px; box-shadow:var(--shadow); }
+.tab-btn { flex:1; padding:10px 20px; border:none; background:transparent; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; color:var(--text-secondary); transition:all .2s; }
+.tab-btn.active { background:var(--primary-light); color:#fff; }
+.filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+.filter-bar select, .filter-bar input { padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:#fff; }
+.filter-bar input { min-width:200px; }
+.countdown-urgent { color:var(--danger); font-weight:700; animation:pulse 1s infinite; }
+.countdown-warn { color:var(--warning); font-weight:600; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+.batch-bar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; margin-bottom:12px; font-size:13px; }
+.dup-alert { padding:16px; border-radius:8px; margin:12px 0; font-size:14px; line-height:1.6; }
+.dup-alert.danger { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+.dup-alert.warning { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+.follow-item { padding:14px; border:1px solid var(--border); border-radius:8px; margin-bottom:10px; }
+.follow-item .meta { display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:var(--text-secondary); }
+.convert-actions { display:flex; gap:8px; margin-top:12px; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.detail-grid .field { }
+.detail-grid .field label { font-size:12px; color:var(--text-secondary); display:block; }
+.detail-grid .field span { font-size:14px; font-weight:500; display:block; margin-top:2px; }
+.stat-card.public { border-left:3px solid var(--text-secondary); }
+.stat-card.private { border-left:3px solid var(--primary-light); }
+.stat-card.converted { border-left:3px solid var(--success); }
+</style>
+
+<div class="flex-between mb-4">
+  <h1 style="font-size:22px;">🎯 线索与公海池</h1>
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-outline btn-sm" onclick="openCreateModal()">+ 新建线索</button>
+    <button class="btn btn-outline btn-sm" onclick="manualReclaim()">🔄 手动回收</button>
+  </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-grid" style="grid-template-columns:repeat(4, minmax(180px, 1fr));">
+  <div class="stat-card"><div class="label">线索总数</div><div class="value">8</div></div>
+  <div class="stat-card public"><div class="label">🌊 公海待认领</div><div class="value" style="color:var(--text-secondary);">4</div></div>
+  <div class="stat-card private"><div class="label">🔒 私海跟进中</div><div class="value" style="color:var(--primary-light);">3</div></div>
+  <div class="stat-card converted"><div class="label">✅ 已转化</div><div class="value" style="color:var(--success);">1</div></div>
+</div>
+
+<!-- Tab 切换 -->
+<div class="tab-bar" id="tabBar">
+  <button class="tab-btn active" onclick="switchTab('all', this)" data-tab="all">全部线索</button>
+  <button class="tab-btn" onclick="switchTab('private', this)" data-tab="private">🔒 私海 (跟进中)</button>
+  <button class="tab-btn" onclick="switchTab('public', this)" data-tab="public">🌊 公海 (待认领)</button>
+  <button class="tab-btn" onclick="switchTab('converted', this)" data-tab="converted">✅ 已转化</button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar" id="filterBar">
+  <span style="font-size:13px;color:var(--text-secondary);font-weight:500;">筛选:</span>
+  <select id="filterMarket" onchange="applyFilters()">
+    <option value="">全部市场</option>
+    <option value="美国">美国</option><option value="欧洲">欧洲</option><option value="中东">中东</option><option value="东南亚">东南亚</option><option value="日韩">日韩</option><option value="澳洲">澳洲</option><option value="南美">南美</option><option value="非洲">非洲</option>
+  </select>
+  <select id="filterLogistics" onchange="applyFilters()">
+    <option value="">全部物流类型</option>
+    <option value="FBA">FBA</option><option value="一件代发">一件代发</option><option value="小包">小包</option><option value="空派">空派</option><option value="海派">海派</option>
+  </select>
+  <input type="text" id="filterKeyword" placeholder="搜索公司名/手机号..." oninput="applyFilters()">
+  <button class="btn btn-outline btn-sm" onclick="clearFilters()">清除</button>
+</div>
+
+<!-- 批量操作栏 -->
+<div class="batch-bar" id="batchBar" style="display:none;">
+  <span id="batchCount" style="font-weight:600;color:var(--primary-light);">已选 0 条</span>
+  <button class="btn btn-sm btn-primary" onclick="batchToPool()">一键放入公海</button>
+  <button class="btn btn-sm btn-outline" onclick="clearSelection()">取消选择</button>
+</div>
+
+<!-- 线索列表 -->
+<div class="panel">
+  <div class="panel-body table-wrap" style="padding:0;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+          <th>公司名称</th>
+          <th>联系人</th>
+          <th>手机号</th>
+          <th>物流偏好</th>
+          <th>目标市场</th>
+          <th>池状态</th>
+          <th>归属</th>
+          <th>回收倒计时</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="leadTableBody">
+        
+        
+        <tr data-lead-id="3" data-pool="1" data-market="欧洲" data-logistics="海派" data-search="义乌欧凯进出口有限公司 13800138003 王芳">
+          <td><input type="checkbox" class="lead-checkbox" value="3" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(3)" style="font-weight:600;color:var(--primary-light);">义乌欧凯进出口有限公司</a></td>
+          <td>王芳</td>
+          <td style="font-family:monospace;font-size:13px;">13800138003</td>
+          <td>
+            
+            <span class="badge badge-blue">海派</span>
+            
+          </td>
+          <td>欧洲</td>
+          <td>
+            <span class="badge badge-blue">🔒 私海</span>
+            
+          </td>
+          <td>李强</td>
+          <td>
+            
+            <span class="countdown-warn" style="font-family:monospace;">
+              ⏱ 剩 119h
+            </span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(3)">跟进</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(3)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="4" data-pool="0" data-market="日韩" data-logistics="海派" data-search="杭州锐思科技有限公司 13800138004 赵总">
+          <td><input type="checkbox" class="lead-checkbox" value="4" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(4)" style="font-weight:600;color:var(--primary-light);">杭州锐思科技有限公司</a></td>
+          <td>赵总</td>
+          <td style="font-family:monospace;font-size:13px;">13800138004</td>
+          <td>
+            
+            <span class="badge badge-blue">海派</span>
+            
+          </td>
+          <td>日韩</td>
+          <td>
+            <span class="badge badge-gray">🌊 公海</span>
+            
+          </td>
+          <td><span style="color:var(--text-secondary);">-</span></td>
+          <td>
+            
+            <span style="color:var(--text-secondary);">-</span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-primary btn-sm" onclick="claimLead(4)">认领</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(4)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="5" data-pool="0" data-market="欧洲" data-logistics="海派" data-search="东莞联达塑胶制品有限公司 13800138005 孙经理">
+          <td><input type="checkbox" class="lead-checkbox" value="5" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(5)" style="font-weight:600;color:var(--primary-light);">东莞联达塑胶制品有限公司</a></td>
+          <td>孙经理</td>
+          <td style="font-family:monospace;font-size:13px;">13800138005</td>
+          <td>
+            
+            <span class="badge badge-blue">海派</span>
+            
+          </td>
+          <td>欧洲</td>
+          <td>
+            <span class="badge badge-gray">🌊 公海</span>
+            
+          </td>
+          <td><span style="color:var(--text-secondary);">-</span></td>
+          <td>
+            
+            <span style="color:var(--text-secondary);">-</span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-primary btn-sm" onclick="claimLead(5)">认领</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(5)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="6" data-pool="1" data-market="美国" data-logistics="海派" data-search="宁波远洋国际贸易有限公司 13800138006 周董">
+          <td><input type="checkbox" class="lead-checkbox" value="6" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(6)" style="font-weight:600;color:var(--primary-light);">宁波远洋国际贸易有限公司</a></td>
+          <td>周董</td>
+          <td style="font-family:monospace;font-size:13px;">13800138006</td>
+          <td>
+            
+            <span class="badge badge-blue">海派</span>
+            
+          </td>
+          <td>美国</td>
+          <td>
+            <span class="badge badge-blue">🔒 私海</span>
+            
+          </td>
+          <td>张晓明</td>
+          <td>
+            
+            <span class="countdown-warn" style="font-family:monospace;">
+              ⏱ 剩 95h
+            </span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(6)">跟进</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(6)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="7" data-pool="0" data-market="欧洲" data-logistics="FBA" data-search="AmazonSeller-DE GmbH +49-176-1234567 Michael Braun">
+          <td><input type="checkbox" class="lead-checkbox" value="7" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(7)" style="font-weight:600;color:var(--primary-light);">AmazonSeller-DE GmbH</a></td>
+          <td>Michael Braun</td>
+          <td style="font-family:monospace;font-size:13px;">+49-176-1234567</td>
+          <td>
+            
+            <span class="badge badge-blue">FBA</span>
+            
+          </td>
+          <td>欧洲</td>
+          <td>
+            <span class="badge badge-gray">🌊 公海</span>
+            
+          </td>
+          <td><span style="color:var(--text-secondary);">-</span></td>
+          <td>
+            
+            <span style="color:var(--text-secondary);">-</span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-primary btn-sm" onclick="claimLead(7)">认领</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(7)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="8" data-pool="2" data-market="中东" data-logistics="一件代发" data-search="同行-深圳快运通 13800138007 黄某">
+          <td><input type="checkbox" class="lead-checkbox" value="8" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(8)" style="font-weight:600;color:var(--primary-light);">同行-深圳快运通</a></td>
+          <td>黄某</td>
+          <td style="font-family:monospace;font-size:13px;">13800138007</td>
+          <td>
+            
+            <span class="badge badge-blue">一件代发</span>
+            
+          </td>
+          <td>中东</td>
+          <td>
+            <span class="badge badge-green">✅ 已转化</span>
+            
+          </td>
+          <td>李强</td>
+          <td>
+            
+            <span style="color:var(--success);font-size:12px;">已转化</span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(8)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="1" data-pool="1" data-market="美国" data-logistics="FBA" data-search="深圳思科达电子有限公司 13800138001 陈总">
+          <td><input type="checkbox" class="lead-checkbox" value="1" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(1)" style="font-weight:600;color:var(--primary-light);">深圳思科达电子有限公司</a></td>
+          <td>陈总</td>
+          <td style="font-family:monospace;font-size:13px;">13800138001</td>
+          <td>
+            
+            <span class="badge badge-blue">FBA</span>
+            
+          </td>
+          <td>美国</td>
+          <td>
+            <span class="badge badge-blue">🔒 私海</span>
+            
+          </td>
+          <td>张晓明</td>
+          <td>
+            
+            <span class="countdown-warn" style="font-family:monospace;">
+              ⏱ 剩 71h
+            </span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(1)">跟进</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(1)">详情</button>
+          </td>
+        </tr>
+        
+        
+        <tr data-lead-id="2" data-pool="0" data-market="欧洲" data-logistics="空派" data-search="广州恒通服装贸易有限公司 13800138002 李经理">
+          <td><input type="checkbox" class="lead-checkbox" value="2" onchange="updateBatchBar()"></td>
+          <td><a href="javascript:void(0)" onclick="openDetailModal(2)" style="font-weight:600;color:var(--primary-light);">广州恒通服装贸易有限公司</a></td>
+          <td>李经理</td>
+          <td style="font-family:monospace;font-size:13px;">13800138002</td>
+          <td>
+            
+            <span class="badge badge-blue">空派</span>
+            
+          </td>
+          <td>欧洲</td>
+          <td>
+            <span class="badge badge-gray">🌊 公海</span>
+            
+          </td>
+          <td><span style="color:var(--text-secondary);">-</span></td>
+          <td>
+            
+            <span style="color:var(--text-secondary);">-</span>
+            
+          </td>
+          <td>
+            
+            <button class="btn btn-primary btn-sm" onclick="claimLead(2)">认领</button>
+            
+            <button class="btn btn-outline btn-sm" onclick="openDetailModal(2)">详情</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </div>
+</div>
+
+<!-- 配置参数提示 -->
+<div style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);margin-top:-12px;margin-bottom:12px;">
+  <span>⚙️ 回收规则: N=7天未跟进 / M=30天未转化 → 自动回公海</span>
+  <span>|</span>
+  <span>📊 认领限制: 每日5条 / 私海上限50条</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// Tab 切换
+// ═══════════════════════════════════════════
+var currentTab = 'all';
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════
+// 筛选逻辑
+// ═══════════════════════════════════════════
+function applyFilters() {
+  var market = document.getElementById('filterMarket').value;
+  var logistics = document.getElementById('filterLogistics').value;
+  var keyword = document.getElementById('filterKeyword').value.toLowerCase();
+  var rows = document.querySelectorAll('#leadTableBody tr');
+  rows.forEach(function(row) {
+    var show = true;
+    // Tab filter (pool)
+    if (currentTab !== 'all') {
+      var tabMap = {private:'1', public:'0', converted:'2'};
+      if (row.dataset.pool !== tabMap[currentTab]) show = false;
+    }
+    // Market filter
+    if (market && row.dataset.market !== market) show = false;
+    // Logistics filter
+    if (logistics && row.dataset.logistics !== logistics) show = false;
+    // Keyword search
+    if (keyword && row.dataset.search.toLowerCase().indexOf(keyword) === -1) show = false;
+    row.style.display = show ? '' : 'none';
+  });
+  updateBatchBar();
+}
+
+function clearFilters() {
+  document.getElementById('filterMarket').value = '';
+  document.getElementById('filterLogistics').value = '';
+  document.getElementById('filterKeyword').value = '';
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════
+// 批量操作
+// ═══════════════════════════════════════════
+function toggleSelectAll() {
+  var checked = document.getElementById('selectAll').checked;
+  var checkboxes = document.querySelectorAll('.lead-checkbox');
+  checkboxes.forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row.style.display !== 'none' || !checked) {
+      cb.checked = checked;
+    }
+  });
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  var checked = document.querySelectorAll('.lead-checkbox:checked');
+  var bar = document.getElementById('batchBar');
+  var count = document.getElementById('batchCount');
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = '已选 ' + checked.length + ' 条';
+  } else {
+    bar.style.display = 'none';
+    document.getElementById('selectAll').checked = false;
+  }
+}
+
+function clearSelection() {
+  document.querySelectorAll('.lead-checkbox').forEach(function(cb) { cb.checked = false; });
+  document.getElementById('selectAll').checked = false;
+  updateBatchBar();
+}
+
+async function batchToPool() {
+  if (!confirm('确定将选中的线索放入公海吗？')) return;
+  var ids = [];
+  document.querySelectorAll('.lead-checkbox:checked').forEach(function(cb) { ids.push(parseInt(cb.value)); });
+  var r = await apiPost('/api/leads/batch-to-pool');
+  if (!r.ok) return showToast(r.msg, 'error');
+  showToast(r.msg);
+  setTimeout(function() { location.reload(); }, 800);
+}
+
+// ═══════════════════════════════════════════
+// 新建线索 — 含判重逻辑 (PRD 3.1)
+// ═══════════════════════════════════════════
+function openCreateModal() {
+  var html = '<h3>📝 新建线索</h3>'
+    + '<div id="dupAlert"></div>'
+    + '<label>公司名称 <span style="color:red">*</span></label>'
+    + '<input id="crCompany" placeholder="请输入企业全称">'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>联系人</label><input id="crContact" placeholder="联系人姓名"></div>'
+    + '<div class="field"><label>手机号 <span style="color:red">*</span></label><input id="crMobile" placeholder="11位手机号"></div>'
+    + '</div>'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>物流偏好 <span style="color:red">*</span></label>'
+    + '<select id="crLogistics"><option value="">请选择</option><option value="FBA">FBA</option><option value="一件代发">一件代发</option><option value="小包">小包</option><option value="空派">空派</option><option value="海派">海派</option></select></div>'
+    + '<div class="field"><label>目标市场</label>'
+    + '<select id="crMarket"><option value="">请选择</option><option value="美国">美国</option><option value="欧洲">欧洲</option><option value="中东">中东</option><option value="东南亚">东南亚</option><option value="日韩">日韩</option><option value="澳洲">澳洲</option><option value="南美">南美</option><option value="非洲">非洲</option></select></div>'
+    + '</div>'
+    + '<div class="detail-grid">'
+    + '<div class="field"><label>邮箱</label><input id="crEmail" placeholder="联系邮箱"></div>'
+    + '<div class="field"><label>来源</label><input id="crSource" placeholder="展会/社媒/独立站等"></div>'
+    + '</div>'
+    + '<label>意向产品/备注</label>'
+    + '<textarea id="crNote" rows="2" placeholder="客户的物流需求或意向产品描述..."></textarea>'
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-outline" onclick="closeModal()">取消</button>'
+    + '<button class="btn btn-primary" id="btnCreate" onclick="doCreateLead()">创建线索</button>'
+    + '</div>';
+  openModal(html);
+}
+
+async function doCreateLead() {
+  var company = document.getElementById('crCompany').value.trim();
+  var mobile = document.getElementById('crMobile').value.trim();
+  if (!company || !mobile) return showToast('公司名称和手机号为必填项', 'error');
+
+  var btn = document.getElementById('btnCreate');
+  btn.disabled = true; btn.textContent = '检测中...';
+
+  var data = {
+    company_name: company,
+    contact_name: document.getElementById('crContact').value.trim(),
+    contact_mobile: mobile,
+    email: document.getElementById('crEmail').value.trim(),
+    source: document.getElementById('crSource').value.trim(),
+    logistics_type: document.getElementById('crLogistics').value,
+    target_market: document.getElementById('crMarket').value,
+    product_interest: document.getElementById('crNote').value.trim()
+  };
+
+  var r = await fetch('/api/leads/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json(); });
+
+  if (r.ok) {
+    showToast(r.msg);
+    closeModal(); setTimeout(function() { location.reload(); }, 500);
+  } else if (r.duplicate) {
+    // 显示判重浮窗 (PRD 3.1)
+    var cls = r.in_pool === 'private' ? 'danger' : 'warning';
+    var alertHtml = '<div class="dup-alert ' + cls + '">'
+      + '<strong>' + (r.in_pool === 'private' ? '⛔' : '⚠️') + ' ' + r.msg + '</strong>';
+    if (r.in_pool === 'public') {
+      alertHtml += '<br><button class="btn btn-success btn-sm" style="margin-top:8px;" onclick="claimFromDup(' + r.existing_lead_id + ')">直接认领该线索</button>';
+    }
+    alertHtml += '<br><button class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="document.getElementById(\'dupAlert\').innerHTML=\'\'">继续新建</button>';
+    alertHtml += '</div>';
+    document.getElementById('dupAlert').innerHTML = alertHtml;
+    btn.disabled = false; btn.textContent = '创建线索';
+  } else {
+    showToast(r.msg || '创建失败', 'error');
+    btn.disabled = false; btn.textContent = '创建线索';
+  }
+}
+
+async function claimFromDup(leadId) {
+  var r = await fetch('/api/leads/' + leadId + '/claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: 1, user_name: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast('认领成功！'); closeModal(); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 认领线索 — 含上限校验 (PRD 3.2)
+// ═══════════════════════════════════════════
+async function claimLead(leadId) {
+  var r = await fetch('/api/leads/' + leadId + '/claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: 1, user_name: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast(r.msg); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 线索详情 — 含跟进记录 (PRD 3.3)
+// ═══════════════════════════════════════════
+async function openDetailModal(leadId) {
+  openModal('<div style="text-align:center;padding:40px;">加载中...</div>');
+  var r = await apiGet('/api/leads/' + leadId);
+  if (!r.ok) { showToast('线索不存在', 'error'); closeModal(); return; }
+  var lead = r.lead;
+  var followUps = r.follow_ups;
+
+  var html = '<div style="max-height:70vh;overflow-y:auto;">'
+    + '<h3>' + lead.company_name + '</h3>'
+    + '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">'
+    + '<span class="badge badge-blue">' + lead.lead_status_label + '</span> '
+    + '创建于 ' + (lead.created_at || '').slice(0, 10) + ' · 跟进' + lead.follow_count + '次'
+    + '</p>';
+
+  // 基本信息
+  html += '<div class="detail-grid" style="margin-bottom:16px;">'
+    + '<div class="field"><label>联系人</label><span>' + (lead.contact_name || '-') + '</span></div>'
+    + '<div class="field"><label>手机号</label><span style="font-family:monospace;">' + lead.contact_mobile + '</span></div>'
+    + '<div class="field"><label>邮箱</label><span>' + (lead.email || '-') + '</span></div>'
+    + '<div class="field"><label>物流偏好</label><span>' + (lead.logistics_type || '-') + '</span></div>'
+    + '<div class="field"><label>目标市场</label><span>' + (lead.target_market || '-') + '</span></div>'
+    + '<div class="field"><label>来源</label><span>' + (lead.source || '-') + '</span></div>'
+    + '<div class="field"><label>归属销售</label><span>' + (lead.owner || '无(公海)') + '</span></div>';
+
+  // 回收倒计时
+  if (lead.reclaim_countdown_hours !== null) {
+    var cls = lead.reclaim_countdown_hours < 24 ? 'countdown-urgent' : 'countdown-warn';
+    html += '<div class="field"><label>回收倒计时</label><span class="' + cls + '" style="font-family:monospace;font-size:16px;">⏱ 剩 ' + lead.reclaim_countdown_hours + ' 小时</span></div>';
+  } else {
+    html += '<div class="field"><label>回收倒计时</label><span style="color:var(--text-secondary);">-</span></div>';
+  }
+  html += '</div>';
+
+  // 操作按钮 (仅私海)
+  if (lead.lead_status === 1) {
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px;">'
+      + '<button class="btn btn-primary btn-sm" onclick="showFollowUpForm(' + leadId + ')">+ 添加跟进</button>'
+      + '<button class="btn btn-success btn-sm" onclick="showConvertConfirm(' + leadId + ')">一键转化</button>'
+      + '</div>'
+      + '<div id="followUpFormArea"></div>'
+      + '<div id="convertConfirmArea"></div>';
+  }
+
+  // 跟进记录列表
+  html += '<h4 style="margin-top:16px;">跟进记录 (' + followUps.length + ')</h4>';
+  if (followUps.length === 0) {
+    html += '<p style="color:var(--text-secondary);text-align:center;padding:20px;">暂无跟进记录</p>';
+  } else {
+    followUps.forEach(function(fu) {
+      html += '<div class="follow-item">'
+        + '<span class="badge badge-blue">' + (fu.status || '跟进') + '</span>'
+        + '<span style="font-size:12px;color:var(--text-secondary);float:right;">' + (fu.created_at || '').slice(0,16).replace('T',' ') + '</span>'
+        + '<p style="margin-top:8px;font-size:14px;">' + fu.content + '</p>'
+        + (fu.image_urls ? (function() { try { var imgs = JSON.parse(fu.image_urls); var h = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'; imgs.forEach(function(url) { h += '<img src="' + url + '" style="width:72px;height:72px;border-radius:6px;object-fit:cover;cursor:pointer;" onclick="previewFullImage(\'' + url + '\')" title="点击放大">'; }); return h + '</div>'; } catch(e) { return ''; } })() : '')
+        + '<div class="meta"><span>跟进人: ' + (fu.created_by || '-') + '</span>'
+        + (fu.next_follow_at ? '<span>下次跟进: ' + fu.next_follow_at.slice(0,16).replace('T',' ') + '</span>' : '')
+        + '</div></div>';
+    });
+  }
+  html += '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>';
+  html += '</div>';
+  document.getElementById('modalContent').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// 添加跟进 (PRD 3.3)
+// ═══════════════════════════════════════════
+function showFollowUpForm(leadId) {
+  var area = document.getElementById('followUpFormArea');
+  area.innerHTML = '<div style="background:#f0f7ff;padding:16px;border-radius:8px;border:1px solid #bfdbfe;">'
+    + '<h4 style="font-size:14px;color:var(--primary-light);margin-bottom:12px;">新增跟进记录</h4>'
+    + '<select id="fuStatus" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;">'
+    + '<option value="未联系">未联系</option><option value="初步沟通">初步沟通</option><option value="意向强烈">意向强烈</option><option value="暂无意向">暂无意向</option><option value="无效信息">无效信息</option></select>'
+    + '<textarea id="fuContent" rows="3" placeholder="跟进内容描述..." style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical;"></textarea>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">'
+    + '<label style="font-size:13px;">下次跟进时间:</label>'
+    + '<input type="datetime-local" id="fuNextTime" style="padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;">'
+    + '</div>'
+    + '<div style="margin-bottom:8px;">'
+    + '<label style="font-size:13px;display:block;margin-bottom:4px;">图片附件（可选）:</label>'
+    + '<input type="file" id="fuImages" multiple accept="image/*" style="font-size:13px;" onchange="previewFollowImages(this)">'
+    + '<div id="fuImagePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>'
+    + '<input type="hidden" id="fuImageUrls" value="">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button class="btn btn-primary btn-sm" onclick="doFollowUp(' + leadId + ')">保存跟进</button>'
+    + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'followUpFormArea\').innerHTML=\'\'">取消</button>'
+    + '</div></div>';
+}
+
+async function previewFollowImages(input) {
+  var preview = document.getElementById('fuImagePreview');
+  var urlsField = document.getElementById('fuImageUrls');
+  preview.innerHTML = '';
+  var urls = [];
+  for (var i = 0; i < input.files.length; i++) {
+    var file = input.files[i];
+    var formData = new FormData();
+    formData.append('file', file);
+    var r = await fetch('/api/upload/follow-up-image', { method: 'POST', body: formData }).then(function(res){return res.json();});
+    if (r.ok) {
+      urls.push(r.url);
+      var img = document.createElement('img');
+      img.src = r.url;
+      img.style.cssText = 'width:72px;height:72px;border-radius:6px;object-fit:cover;';
+      preview.appendChild(img);
+    }
+  }
+  urlsField.value = JSON.stringify(urls);
+}
+
+async function doFollowUp(leadId) {
+  var content = document.getElementById('fuContent').value.trim();
+  if (!content) return showToast('请输入跟进内容', 'error');
+  var data = {
+    status: document.getElementById('fuStatus').value,
+    content: content,
+    image_urls: document.getElementById('fuImageUrls').value || '',
+    next_follow_at: document.getElementById('fuNextTime').value || null,
+    created_by: '张晓明'
+  };
+  var r = await fetch('/api/leads/' + leadId + '/follow-up', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json(); });
+  if (r.ok) {
+    showToast('跟进记录已保存，回收倒计时已重置');
+    openDetailModal(leadId);  // 刷新详情
+  } else {
+    showToast(r.msg, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════
+// 线索转化 (PRD 3.4)
+// ═══════════════════════════════════════════
+function showConvertConfirm(leadId) {
+  var area = document.getElementById('convertConfirmArea');
+  area.innerHTML = '<div style="background:#f0fdf4;padding:16px;border-radius:8px;border:1px solid #bbf7d0;">'
+    + '<h4 style="font-size:14px;color:var(--success);margin-bottom:8px;">确认转化</h4>'
+    + '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">该线索即将转化，请选择目标类型：</p>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button class="btn btn-success btn-sm" onclick="doConvert(' + leadId + ', \'customer\')">转为客户</button>'
+    + '<button class="btn btn-sm" style="background:#7c3aed;color:#fff;" onclick="doConvert(' + leadId + ', \'opportunity\')">转为商机</button>'
+    + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'convertConfirmArea\').innerHTML=\'\'">取消</button>'
+    + '</div></div>';
+}
+
+async function doConvert(leadId, type) {
+  var r = await fetch('/api/leads/' + leadId + '/convert', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({convert_type: type, operator: '张晓明'})
+  }).then(function(res) { return res.json(); });
+  if (r.ok) { showToast(r.msg); closeModal(); setTimeout(function() { location.reload(); }, 500); }
+  else showToast(r.msg, 'error');
+}
+
+// ═══════════════════════════════════════════
+// 手动回收 (管理员触发)
+// ═══════════════════════════════════════════
+async function manualReclaim() {
+  if (!confirm('确定要立即执行全量回收检测吗？\n将根据配置的N/M参数回收超时线索至公海。')) return;
+  var r = await apiPost('/api/leads/reclaim');
+  showToast('回收完成，共回收 ' + r.reclaimed + ' 条线索至公海 (N=' + r.params.N_days + '天, M=' + r.params.M_days + '天)');
+  setTimeout(function() { location.reload(); }, 1000);
+}
+
+function previewFullImage(url) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:10000;display:flex;justify-content:center;align-items:center;cursor:pointer;';
+  overlay.onclick = function() { document.body.removeChild(overlay); };
+  var img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'max-width:95%;max-height:95%;object-fit:contain;';
+  var closeBtn = document.createElement('div');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:30px;right:30px;color:#fff;font-size:32px;cursor:pointer;';
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
+}
+</script>
+
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ── Modal utils ──
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Toast ──
+function showToast(msg, type='success') {
+  let el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;right:20px;z-index:999;padding:12px 20px;
+    border-radius:8px;color:#fff;font-size:14px;animation:fadeIn .3s;
+    background:${type==='error'?'#ef4444':'#10b981'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(() => el.remove(), 300); }, 2500);
+}
+
+// ── API helpers ──
+async function apiGet(url) {
+  let r = await fetch(url);
+  return r.json();
+}
+async function apiPost(url) {
+  let r = await fetch(url, {method:'POST'});
+  return r.json();
+}
+</script>
+
+</body>
+</html>

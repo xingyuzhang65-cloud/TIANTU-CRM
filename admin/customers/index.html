@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨境物流CRM - ShareAI</title>
+<link rel="stylesheet" href="/TIANTU-CRM/admin/static/css/style.css">
+<script src="/TIANTU-CRM/admin/static/admin-pages.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>🚢 跨境物流CRM</h2>
+      <div class="sub">Powered by ShareAI 智能引擎</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="">
+        <span class="icon">📊</span> 经营仪表盘
+      </a>
+      <a href="/leads" class="">
+        <span class="icon">🎯</span> 线索公海池
+      </a>
+      <a href="/customers" class="active">
+        <span class="icon">👥</span> 客户管理与商机
+      </a>
+      <a href="/quotation" class="">
+        <span class="icon">💰</span> 报价管理
+      </a>
+      <a href="/tracking" class="">
+        <span class="icon">📍</span> 轨迹与客服
+      </a>
+      <a href="/risk" class="">
+        <span class="icon">🛡️</span> 风控授信
+      </a>
+      <a href="/analytics" class="">
+        <span class="icon">📈</span> 经营分析
+      </a>
+      <a href="/moments" class="">
+        <span class="icon">📱</span> 团队广场
+        <span class="sidebar-badge">NEW</span>
+      </a>
+      <a href="/ai-assistant" class="">
+        <span class="icon">🤖</span> AI智能助手
+        <span class="sidebar-badge">AI</span>
+      </a>
+    </nav>
+    <div style="position:absolute;bottom:20px;left:20px;right:20px;font-size:11px;color:rgba(255,255,255,.4);">
+      结合纷享销客 ShareAI · 天图架构
+    </div>
+  </aside>
+  <main class="main">
+    
+<style>
+.crm-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.crm-title { font-size:22px; font-weight:700; color:var(--text); }
+.crm-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.tab-strip { display:grid; grid-template-columns:repeat(5, minmax(110px, 1fr)); gap:8px; margin-bottom:12px; }
+.tab-btn { border:1px solid var(--border); background:#fff; border-radius:8px; min-height:54px; cursor:pointer; color:#475569; font-size:14px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; }
+.tab-btn.active { background:#eff6ff; border-color:#93c5fd; color:#2563eb; }
+.tab-btn.danger.active { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
+.tab-count { min-width:22px; height:20px; border-radius:10px; padding:0 7px; background:#e2e8f0; color:#64748b; display:inline-flex; align-items:center; justify-content:center; font-size:11px; }
+.tab-btn.active .tab-count { background:#2563eb; color:#fff; }
+.tab-btn.danger.active .tab-count { background:#dc2626; color:#fff; }
+.filter-panel { background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; }
+.filter-row { display:grid; grid-template-columns:150px minmax(180px, 1fr) 150px 150px 150px auto; gap:10px; align-items:center; }
+.filter-row select, .filter-row input { height:36px; border:1px solid var(--border); border-radius:6px; padding:0 10px; font-size:13px; background:#fff; }
+.filter-help { margin-top:8px; font-size:12px; color:#64748b; }
+.toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; background:#fff; border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px; }
+.bulk-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.table-panel { background:#fff; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.customer-link { color:#2563eb; font-weight:700; cursor:pointer; }
+.tag-line { display:flex; gap:5px; flex-wrap:wrap; margin-top:4px; }
+.mini-tag { display:inline-flex; align-items:center; min-height:20px; border-radius:10px; padding:2px 8px; font-size:11px; background:#f1f5f9; color:#475569; }
+.mini-tag.blue { background:#dbeafe; color:#1e40af; }
+.mini-tag.green { background:#dcfce7; color:#166534; }
+.mini-tag.red { background:#fee2e2; color:#991b1b; }
+.mini-tag.orange { background:#ffedd5; color:#9a3412; }
+.muted { color:#64748b; font-size:12px; }
+.nowrap { white-space:nowrap; }
+.pagination { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-top:1px solid var(--border); color:#64748b; font-size:13px; }
+.modal-field { margin:10px 0; }
+.modal-field label { display:block; font-size:12px; color:#64748b; margin-bottom:5px; }
+.modal-field input, .modal-field select, .modal-field textarea { width:100%; border:1px solid var(--border); border-radius:6px; padding:9px 10px; font-size:14px; box-sizing:border-box; }
+.empty-inline { text-align:center; padding:50px; color:#64748b; }
+.workspace-switch { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+@media(max-width:980px) {
+  .tab-strip { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .filter-row { grid-template-columns:1fr 1fr; }
+  .crm-head, .toolbar { align-items:flex-start; flex-direction:column; }
+}
+</style>
+
+<div class="workspace-switch">
+  <a class="btn btn-primary btn-sm" href="/customers?view=management">客户管理</a>
+  <a class="btn btn-outline btn-sm" href="/customers?view=opportunities">客户与商机</a>
+  <a class="btn btn-outline btn-sm" href="/leads">线索公海池</a>
+</div>
+
+<div class="crm-head">
+  <div>
+    <h1 class="crm-title">客户管理</h1>
+    <div class="muted">按 PRD 还原我的客户、公司池、即将掉保、全部、成交客户五个业务视图</div>
+  </div>
+  <div class="crm-actions">
+    <button class="btn btn-outline btn-sm" onclick="placeholderAction('营销触达')">营销触达</button>
+    <button class="btn btn-outline btn-sm" onclick="placeholderAction('空号检测')">空号检测</button>
+    <button class="btn btn-outline btn-sm" onclick="placeholderAction('客户查重')">客户查重</button>
+    <button class="btn btn-outline btn-sm" onclick="exportList()">导出列表</button>
+    <button class="btn btn-primary btn-sm" onclick="location.href='/leads'">新增客户</button>
+  </div>
+</div>
+
+<div class="tab-strip" id="tabStrip"></div>
+
+<div class="filter-panel">
+  <div class="filter-row">
+    <select id="keywordField">
+      <option value="customer_name">客户名称</option>
+      <option value="company_name">公司名称</option>
+      <option value="mobile">手机号</option>
+      <option value="legal_person">公司法人</option>
+      <option value="owner_name">负责人</option>
+    </select>
+    <input id="keywordInput" placeholder="输入关键词搜索">
+    <select id="followStatus">
+      <option value="">全部跟进状态</option>
+      <option value="INITIAL_VISIT">初访</option>
+      <option value="INTERESTED">有意向</option>
+      <option value="QUOTED">报价</option>
+      <option value="CLOSED">成交</option>
+      <option value="TEMP_HOLD">暂时搁置</option>
+    </select>
+    <select id="sourceFilter">
+      <option value="">全部来源</option>
+      <option value="已登记">已登记</option>
+      <option value="独立开发">独立开发</option>
+    </select>
+    <select id="lastFollowRange">
+      <option value="">最后跟进时间</option>
+      <option value="today">今天</option>
+      <option value="yesterday">昨天</option>
+      <option value="7d">最近7天</option>
+    </select>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" onclick="reloadFirstPage()">搜索</button>
+      <button class="btn btn-outline btn-sm" onclick="clearFilters()">清空</button>
+    </div>
+  </div>
+  <div class="filter-help" id="filterHelp"></div>
+</div>
+
+<div class="toolbar">
+  <div>
+    <span id="totalText">共 0 条</span>
+    <span class="muted" id="selectedText">已勾选本页 0 个客户</span>
+    <button class="btn btn-outline btn-sm" id="selectAllResultsBtn" onclick="selectAllResults()" style="display:none;">勾选全部匹配客户</button>
+  </div>
+  <div class="bulk-actions" id="bulkActions"></div>
+</div>
+
+<div class="table-panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="checkAll" onchange="togglePageSelection()"></th>
+          <th>客户/公司</th>
+          <th>Hot联系方式</th>
+          <th>负责人</th>
+          <th>所属状态</th>
+          <th>跟进状态</th>
+          <th>最近跟进</th>
+          <th>保护/成交时间</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="customerRows"></tbody>
+    </table>
+  </div>
+  <div class="pagination">
+    <div id="pageText">第 1 页</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="pageSize" onchange="reloadFirstPage()">
+        <option value="20">20/页</option>
+        <option value="50">50/页</option>
+        <option value="100">100/页</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="prevPage()">上一页</button>
+      <button class="btn btn-outline btn-sm" onclick="nextPage()">下一页</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TABS = [
+  { key: 'my', label: '我的客户' },
+  { key: 'pool', label: '公司池' },
+  { key: 'expiring', label: '即将掉保', danger: true },
+  { key: 'all', label: '全部' },
+  { key: 'closed', label: '成交客户' },
+];
+const FOLLOW_LABELS = {
+  INITIAL_VISIT: '初访',
+  INTERESTED: '有意向',
+  QUOTED: '报价',
+  CLOSED: '成交',
+  TEMP_HOLD: '暂时搁置',
+};
+let activeTab = 'my';
+let page = 1;
+let total = 0;
+let tabCounts = {};
+let records = [];
+let selected = new Set();
+let selectedAll = false;
+
+const el = id => document.getElementById(id);
+const htmlEscape = v => String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+
+function renderTabs() {
+  el('tabStrip').innerHTML = TABS.map(t => `
+    <button class="tab-btn ${t.danger ? 'danger' : ''} ${activeTab === t.key ? 'active' : ''}" onclick="switchTab('${t.key}')">
+      <span>${t.label}</span><span class="tab-count">${tabCounts[t.key] || 0}</span>
+    </button>
+  `).join('');
+}
+
+function renderBulkActions() {
+  const actionsByTab = {
+    my: [
+      ['updateStatus', '更新状态'],
+      ['transfer', '转移给他人'],
+      ['returnPool', '退回客户公海'],
+      ['delete', '删除'],
+    ],
+    pool: [
+      ['claim', '领取'],
+      ['transfer', '转移给他人'],
+      ['delete', '删除'],
+    ],
+    expiring: [
+      ['updateStatus', '更新状态'],
+      ['transfer', '转移给他人'],
+      ['returnPool', '退回客户公海'],
+      ['delete', '删除'],
+    ],
+    all: [
+      ['transfer', '转移给他人'],
+      ['delete', '删除'],
+    ],
+    closed: [
+      ['updateStatus', '更新状态'],
+      ['transfer', '转移给他人'],
+      ['delete', '删除'],
+    ],
+  };
+  el('bulkActions').innerHTML = (actionsByTab[activeTab] || []).map(([key, label]) =>
+    `<button class="btn btn-outline btn-sm" onclick="openBatch('${key}')">${label}</button>`
+  ).join('') + '<button class="btn btn-outline btn-sm" onclick="placeholderAction(\'自定义表格\')">自定义表格</button>';
+}
+
+function updateFilterHelp() {
+  const text = {
+    my: '我的客户：支持字段、来源、跟进状态、最后跟进时间、负责人范围筛选。',
+    pool: '公司池：重点支持领取、转移给他人、变更客户公海等操作；负责人为空。',
+    expiring: '即将掉保：按保护到期时间计算，新增有效跟进后会退出该视图。',
+    all: '全部：聚合查询视图，不作为真实状态存储。',
+    closed: '成交客户：跟进状态为成交，支持按成交时间和负责人维护。',
+  };
+  el('filterHelp').textContent = text[activeTab] || '';
+  el('followStatus').disabled = activeTab === 'pool' || activeTab === 'closed';
+  el('lastFollowRange').disabled = activeTab === 'closed';
+}
+
+async function fetchData() {
+  renderTabs();
+  renderBulkActions();
+  updateFilterHelp();
+  el('customerRows').innerHTML = '<tr><td colspan="10" class="empty-inline">正在加载...</td></tr>';
+  const params = new URLSearchParams({
+    tab: activeTab,
+    page,
+    page_size: el('pageSize').value,
+    keyword_field: el('keywordField').value,
+  });
+  for (const [id, key] of [
+    ['keywordInput', 'keyword'],
+    ['followStatus', 'follow_status'],
+    ['sourceFilter', 'source'],
+    ['lastFollowRange', 'last_follow_range'],
+  ]) {
+    const v = el(id).value.trim();
+    if (v) params.set(key, v);
+  }
+  const res = await fetch(`/api/crm/customers?${params.toString()}`).then(r => r.json());
+  if (!res.ok) {
+    el('customerRows').innerHTML = '<tr><td colspan="10" class="empty-inline">加载失败，请刷新后重试</td></tr>';
+    return;
+  }
+  records = res.records || [];
+  total = res.total || 0;
+  tabCounts = res.tab_counts || {};
+  selectedAll = false;
+  selected.clear();
+  renderTabs();
+  renderRows();
+  updateSelectionText();
+}
+
+function renderRows() {
+  if (!records.length) {
+    el('customerRows').innerHTML = '<tr><td colspan="10" class="empty-inline">暂无数据</td></tr>';
+    return;
+  }
+  el('customerRows').innerHTML = records.map(r => {
+    const statusClass = r.ownership_status === 'EXPIRING_PROTECTION' ? 'red' : r.ownership_status === 'CLOSED_CUSTOMER' ? 'green' : r.ownership_status === 'COMPANY_POOL' ? 'orange' : 'blue';
+    const timeLabel = r.ownership_status === 'CLOSED_CUSTOMER' ? '成交' : '保护到期';
+    const timeValue = r.ownership_status === 'CLOSED_CUSTOMER' ? r.closed_at : r.protect_expire_at;
+    return `
+      <tr>
+        <td><input type="checkbox" class="row-check" value="${r.id}" onchange="toggleRow(${r.id}, this.checked)"></td>
+        <td>
+          <div class="customer-link" onclick="openCustomer(${r.id})">${htmlEscape(r.customer_name)}</div>
+          <div class="muted">${htmlEscape(r.company_name)} · ${htmlEscape(r.source || '-')}</div>
+          <div class="tag-line">${(r.tags || []).map(t => `<span class="mini-tag">${htmlEscape(t)}</span>`).join('')}</div>
+        </td>
+        <td><div>${htmlEscape(r.hot_contact?.name || '-')}</div><div class="customer-link" onclick="showHotNumber('${htmlEscape(r.mobile)}')">${htmlEscape(r.masked_mobile || '-')}</div></td>
+        <td>${htmlEscape(r.owner || '未分配')}</td>
+        <td><span class="mini-tag ${statusClass}">${htmlEscape(r.ownership_label)}</span>${r.pool_name ? `<div class="muted">${htmlEscape(r.pool_name)}</div>` : ''}</td>
+        <td><span class="mini-tag blue">${htmlEscape(r.follow_status_label)}</span></td>
+        <td><div>${htmlEscape(r.latest_follow?.content || '-')}</div><div class="muted">${fmt(r.last_followup_at)}</div></td>
+        <td><div class="muted">${timeLabel}</div><div class="nowrap">${fmt(timeValue)}</div></td>
+        <td class="nowrap">${fmt(r.created_at)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="openCustomer(${r.id})">查看</button></td>
+      </tr>
+    `;
+  }).join('');
+  el('pageText').textContent = `第 ${page} 页 / 共 ${Math.max(1, Math.ceil(total / Number(el('pageSize').value)))} 页`;
+  el('totalText').textContent = `共 ${total} 条`;
+}
+
+function fmt(v) {
+  if (!v) return '-';
+  return String(v).slice(0, 16).replace('T', ' ');
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  reloadFirstPage();
+}
+
+function reloadFirstPage() {
+  page = 1;
+  fetchData();
+}
+
+function clearFilters() {
+  ['keywordInput', 'followStatus', 'sourceFilter', 'lastFollowRange'].forEach(id => el(id).value = '');
+  el('keywordField').value = 'customer_name';
+  reloadFirstPage();
+}
+
+function prevPage() {
+  if (page > 1) {
+    page -= 1;
+    fetchData();
+  }
+}
+
+function nextPage() {
+  if (page * Number(el('pageSize').value) < total) {
+    page += 1;
+    fetchData();
+  }
+}
+
+function togglePageSelection() {
+  const checked = el('checkAll').checked;
+  document.querySelectorAll('.row-check').forEach(c => {
+    c.checked = checked;
+    toggleRow(Number(c.value), checked, false);
+  });
+  updateSelectionText();
+}
+
+function toggleRow(id, checked, update = true) {
+  if (checked) selected.add(id);
+  else selected.delete(id);
+  selectedAll = false;
+  if (update) updateSelectionText();
+}
+
+function updateSelectionText() {
+  el('selectedText').textContent = selectedAll ? `已勾选全部匹配客户 ${total} 个` : `已勾选本页 ${selected.size} 个客户`;
+  el('selectAllResultsBtn').style.display = selected.size > 0 && selected.size < total ? 'inline-flex' : 'none';
+}
+
+function selectAllResults() {
+  selectedAll = true;
+  updateSelectionText();
+  showToast(`已勾选全部匹配客户 ${total} 个`);
+}
+
+function selectedIds() {
+  return selectedAll ? records.map(r => r.id) : Array.from(selected);
+}
+
+function requireSelection() {
+  if (!selectedIds().length) {
+    showToast('请先选择需要操作的客户', 'error');
+    return false;
+  }
+  return true;
+}
+
+function openBatch(action) {
+  if (!requireSelection()) return;
+  const ids = selectedIds();
+  const titles = { updateStatus: '更新状态', claim: '领取客户', transfer: '转移负责人', returnPool: '退回客户公海', delete: '删除客户' };
+  let form = '';
+  if (action === 'updateStatus') {
+    form = `<div class="modal-field"><label>目标跟进状态</label><select id="batchStatus">
+      <option value="INITIAL_VISIT">初访</option><option value="INTERESTED">有意向</option><option value="QUOTED">报价</option><option value="CLOSED">成交</option><option value="TEMP_HOLD">暂时搁置</option>
+    </select></div>`;
+  } else if (action === 'transfer') {
+    form = '<div class="modal-field"><label>目标负责人</label><input id="batchOwner" value="张晓明"></div>';
+  } else if (action === 'claim') {
+    form = '<div class="modal-field"><label>领取人</label><input id="batchOwner" value="张晓明"></div>';
+  } else if (action === 'returnPool') {
+    form = '<div class="modal-field"><label>退回原因</label><textarea id="batchReason" placeholder="可选"></textarea></div>';
+  } else if (action === 'delete') {
+    form = '<div class="modal-field"><label>确认</label><div class="muted">删除后客户将不在当前业务列表展示，是否确认删除？</div></div>';
+  }
+  openModal(`
+    <h3>${titles[action]}</h3>
+    <div class="muted">将影响 ${ids.length} 个客户，执行前请确认。</div>
+    ${form}
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="runBatch('${action}')">确认执行</button>
+    </div>
+  `);
+}
+
+async function runBatch(action) {
+  const endpoint = {
+    updateStatus: '/api/crm/customers/batch/update-status',
+    claim: '/api/crm/customers/batch/claim',
+    transfer: '/api/crm/customers/batch/transfer-owner',
+    returnPool: '/api/crm/customers/batch/return-pool',
+    delete: '/api/crm/customers/batch/delete',
+  }[action];
+  const payload = { ids: selectedIds(), operator: '张晓明' };
+  if (action === 'updateStatus') payload.status = el('batchStatus').value;
+  if (action === 'transfer' || action === 'claim') payload.owner = el('batchOwner').value.trim();
+  if (action === 'returnPool') payload.reason = el('batchReason').value.trim();
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(r => r.json());
+  closeModal();
+  if (res.ok) {
+    showToast(res.msg || '操作成功');
+    fetchData();
+  } else {
+    showToast(res.msg || '操作失败', 'error');
+  }
+}
+
+function openCustomer(id) {
+  location.href = `/customer/${id}`;
+}
+
+function showHotNumber(phone) {
+  if (!phone || phone === '-') return showToast('暂无号码');
+  openModal(`<h3>Hot号码</h3><div class="modal-field"><label>完整手机号</label><input value="${phone}" readonly></div><div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>`);
+}
+
+function placeholderAction(name) {
+  showToast(`${name}入口已保留，外部服务待接入`);
+}
+
+function exportList() {
+  showToast('导出任务已创建，请稍后查看下载结果');
+}
+
+let searchTimer = null;
+el('keywordInput').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(reloadFirstPage, 300);
+});
+
+renderTabs();
+renderBulkActions();
+updateFilterHelp();
+fetchData();
+</script>
+
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ── Modal utils ──
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Toast ──
+function showToast(msg, type='success') {
+  let el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;right:20px;z-index:999;padding:12px 20px;
+    border-radius:8px;color:#fff;font-size:14px;animation:fadeIn .3s;
+    background:${type==='error'?'#ef4444':'#10b981'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(() => el.remove(), 300); }, 2500);
+}
+
+// ── API helpers ──
+async function apiGet(url) {
+  let r = await fetch(url);
+  return r.json();
+}
+async function apiPost(url) {
+  let r = await fetch(url, {method:'POST'});
+  return r.json();
+}
+</script>
+
+</body>
+</html>
