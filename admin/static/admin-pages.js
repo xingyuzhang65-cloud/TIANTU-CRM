@@ -24,6 +24,13 @@
     { id: 6, customer_name: '杭州锐思科技有限公司', company_name: '杭州锐思科技有限公司', contact_name: '赵总', mobile: '13800138004', masked_mobile: '138****8004', hot_contact: { name: '赵总', mobile: '138****8004' }, source: '已登记', tags: ['C', '同行'], follow_status: 'INTERESTED', follow_status_label: '有意向', ownership_status: 'MY_CUSTOMER', ownership_label: '我的客户', owner: '李强', owner_id: 2, latest_follow: { content: '客户对时效和在线轨迹追踪功能认可', created_by: '李强' }, credit: null, latest_order: null },
   ];
 
+  const seedMoments = [
+    { id: 1, user_id: 1, user: { id: 1, name: '张晓明', phone: '13800138000' }, type: 'SYSTEM_KPI', content: '5月团队战报：本周新签客户3家，运单量环比增长12%，美森线满载率92%！', media_urls: [prefix + '/static/uploads/moment_chart5.jpg', prefix + '/static/uploads/moment_team2.jpg'], visible_type: 'DEPT', visible_target: [1], created_at: '2026-08-13 12:07:24', like_count: 3, user_liked: false, comments: [] },
+    { id: 2, user_id: 2, user: { id: 2, name: '陈总', phone: '13800138001' }, type: 'ACTIVITY', content: '恭喜签约！思科达电子确认Q3美森快船月度包舱，预计月出货量500方以上，感谢客户信任！', media_urls: [prefix + '/static/uploads/moment_sign8.jpg', prefix + '/static/uploads/moment_office1.jpg'], visible_type: 'ALL', visible_target: null, link_client_id: 1, link_client: { id: 1, company_name: '深圳思科达电子有限公司' }, created_at: '2026-08-13 09:07:24', like_count: 3, user_liked: true, comments: [] },
+    { id: 3, user_id: 1, user: { id: 1, name: '张晓明', phone: '13800138000' }, type: 'DAILY', content: '今天拜访了富通国际，客户对新增的东南亚线很感兴趣。下周安排具体报价方案。', media_urls: [prefix + '/static/uploads/moment_office6.jpg'], visible_type: 'ALL', visible_target: null, created_at: '2026-08-13 06:07:24', like_count: 2, user_liked: false, comments: [] },
+    { id: 4, user_id: 3, user: { id: 3, name: '李强', phone: '13800138002' }, type: 'ACTIVITY', content: '盐田至鹿特丹线本周成功首航！感谢运营团队的全力配合，客户反馈时效满意度提升明显。', media_urls: [prefix + '/static/uploads/moment_warehouse7.jpg', prefix + '/static/uploads/moment_cargo3.jpg'], visible_type: 'DEPT', visible_target: [2], created_at: '2026-08-12 14:07:24', like_count: 2, user_liked: true, comments: [] },
+  ];
+
   function read(key, seed) {
     try { return JSON.parse(localStorage.getItem(key)) || seed; } catch (_) { return seed; }
   }
@@ -61,6 +68,19 @@
       return jsonResponse({ ok: true, records, total: records.length, page: 1, page_size: 20, tab_counts: { my: customers.length, pool: 3, expiring: 1, closed: 1, all: customers.length + 5 }, selected_all_token: 'pages-demo' });
     }
     if (path === '/api/reminders/list') return jsonResponse({ ok: true, reminders: [], total: 0 });
+    if (path === '/api/v1/crm/moments' && method === 'GET') {
+      const moments = read('tiantu_admin_moments', seedMoments);
+      return jsonResponse({ ok: true, items: moments, total: moments.length, page: 1, page_size: 50, has_more: false });
+    }
+    if (path === '/api/v1/crm/moments' && method === 'POST') {
+      const body = JSON.parse(init.body || '{}');
+      const moments = read('tiantu_admin_moments', seedMoments);
+      const item = { id: Date.now(), user_id: 1, user: { id: 1, name: '张晓明', phone: '13800138000' }, type: body.type || 'DAILY', content: body.content || '', media_urls: [], visible_type: body.visible_type || 'ALL', visible_target: null, created_at: new Date().toLocaleString('zh-CN'), like_count: 0, user_liked: false, comments: [] };
+      write('tiantu_admin_moments', [item, ...moments]);
+      return jsonResponse({ ok: true, item });
+    }
+    if (/^\/api\/v1\/crm\/moments\/\d+\/like$/.test(path) && method === 'POST') return jsonResponse({ ok: true, liked: true });
+    if (/^\/api\/v1\/crm\/moments\/\d+\/comment$/.test(path) && method === 'POST') return jsonResponse({ ok: true, message: '评论已保存到演示数据' });
     if (path.startsWith('/api/') && method !== 'GET') return jsonResponse({ ok: true, message: '演示操作已保存到当前浏览器' });
     return originalFetch(input, init);
   };
