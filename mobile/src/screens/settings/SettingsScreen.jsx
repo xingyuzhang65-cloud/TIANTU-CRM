@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import client from '../../api/client';
@@ -17,6 +17,12 @@ export default function SettingsScreen() {
   });
   const [saving, setSaving] = useState(false);
   const [reclaiming, setReclaiming] = useState(false);
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -57,6 +63,54 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const closePasswordModal = () => {
+    if (changingPassword) return;
+    setPasswordModalVisible(false);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPasswords(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('提示', '请完整填写三个密码字段');
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('提示', '新密码至少6位');
+      return;
+    }
+    if (newPassword.length > 128) {
+      Alert.alert('提示', '新密码不能超过128位');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('提示', '两次输入的新密码不一致');
+      return;
+    }
+    if (currentPassword === newPassword) {
+      Alert.alert('提示', '新密码不能与当前密码相同');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await client.post('/api/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      if (!res.ok) throw new Error(res.msg || '修改密码失败');
+      setPasswordModalVisible(false);
+      Alert.alert('修改成功', '请使用新密码重新登录');
+      await logout();
+    } catch (e) {
+      Alert.alert('修改失败', e.message);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -72,6 +126,20 @@ export default function SettingsScreen() {
           <Text style={styles.profilePhone}>{user?.phone || user?.username || ''}</Text>
           <Text style={styles.profileRole}>{user?.role === 'admin' ? '管理员' : '销售顾问'}</Text>
         </View>
+      </View>
+
+      <View style={styles.securitySection}>
+        <Text style={styles.sectionTitle}>账号安全</Text>
+        <TouchableOpacity style={styles.securityCard} onPress={() => setPasswordModalVisible(true)}>
+          <View style={styles.securityIcon}>
+            <Ionicons name="key-outline" size={21} color="#2563eb" />
+          </View>
+          <View style={styles.securityInfo}>
+            <Text style={styles.securityTitle}>修改密码</Text>
+            <Text style={styles.securityDesc}>定期更新密码，保障账号安全</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
@@ -123,6 +191,73 @@ export default function SettingsScreen() {
 
       <Text style={styles.version}>跨境物流CRM v1.0 · Mobile</Text>
       <View style={{ height: 40 }} />
+
+      <Modal visible={passwordModalVisible} transparent animationType="fade" onRequestClose={closePasswordModal}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>修改密码</Text>
+                <Text style={styles.modalSubtitle}>修改后需要重新登录</Text>
+              </View>
+              <TouchableOpacity style={styles.closeButton} onPress={closePasswordModal} disabled={changingPassword}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.passwordLabel}>当前密码</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="请输入当前密码"
+                secureTextEntry={!showPasswords}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <Text style={styles.passwordLabel}>新密码</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="至少6位"
+                secureTextEntry={!showPasswords}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <Text style={styles.passwordLabel}>确认新密码</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="请再次输入新密码"
+                secureTextEntry={!showPasswords}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                autoCapitalize="none"
+                onSubmitEditing={handleChangePassword}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.visibilityRow} onPress={() => setShowPasswords(!showPasswords)}>
+              <Ionicons name={showPasswords ? 'eye-off-outline' : 'eye-outline'} size={18} color="#64748b" />
+              <Text style={styles.visibilityText}>{showPasswords ? '隐藏密码' : '显示密码'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.passwordSubmit} onPress={handleChangePassword} disabled={changingPassword}>
+              {changingPassword ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="shield-checkmark-outline" size={19} color="#fff" />
+                  <Text style={styles.passwordSubmitText}>确认修改</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -138,6 +273,12 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 18, fontWeight: '600', color: '#0f172a' },
   profilePhone: { fontSize: 13, color: '#64748b', marginTop: 2 },
   profileRole: { fontSize: 12, color: '#2563eb', marginTop: 2 },
+  securitySection: { marginTop: 20, paddingHorizontal: 16 },
+  securityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#eef2f7' },
+  securityIcon: { width: 38, height: 38, borderRadius: 8, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  securityInfo: { flex: 1, marginLeft: 12 },
+  securityTitle: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
+  securityDesc: { fontSize: 12, color: '#94a3b8', marginTop: 3 },
   section: { marginTop: 20, paddingHorizontal: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a', marginBottom: 10 },
   configCard: { backgroundColor: '#fff', borderRadius: 12, padding: 4 },
@@ -153,4 +294,17 @@ const styles = StyleSheet.create({
   logoutBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginHorizontal: 16, marginTop: 24, paddingVertical: 14, borderRadius: 10, backgroundColor: '#fef2f2', gap: 6 },
   logoutText: { color: '#dc2626', fontWeight: '600', fontSize: 15 },
   version: { textAlign: 'center', marginTop: 16, fontSize: 12, color: '#cbd5e1' },
+  modalBackdrop: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(15,23,42,.48)', padding: 22 },
+  modalCard: { width: '100%', maxWidth: 420, alignSelf: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 18 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  modalTitle: { fontSize: 19, fontWeight: '700', color: '#0f172a' },
+  modalSubtitle: { fontSize: 12, color: '#64748b', marginTop: 3 },
+  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  passwordLabel: { fontSize: 13, fontWeight: '600', color: '#334155', marginTop: 13, marginBottom: 6 },
+  passwordRow: { flexDirection: 'row', alignItems: 'center' },
+  passwordInput: { flex: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: '#0f172a' },
+  visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, alignSelf: 'flex-start' },
+  visibilityText: { fontSize: 12, color: '#64748b' },
+  passwordSubmit: { minHeight: 46, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#2563eb', borderRadius: 8, marginTop: 20 },
+  passwordSubmitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

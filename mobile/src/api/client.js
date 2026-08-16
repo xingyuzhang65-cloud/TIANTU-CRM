@@ -2,6 +2,7 @@
 import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'auth_token';
+const DEMO_PASSWORDS_KEY = 'crm_demo_passwords';
 const IS_PAGES = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
 const now = () => new Date().toISOString();
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
@@ -131,6 +132,23 @@ const search = (rows, params = {}, fields = []) => {
 };
 const publicUser = (user) => { const { password, ...safe } = user; return safe; };
 
+const getDemoPasswords = () => {
+  if (!IS_PAGES) return {};
+  try {
+    return JSON.parse(localStorage.getItem(DEMO_PASSWORDS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const getDemoPassword = (user) => getDemoPasswords()[user.username] || user.password;
+
+const setDemoPassword = (username, password) => {
+  const passwords = getDemoPasswords();
+  passwords[username] = password;
+  localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
+};
+
 const filterCrmCustomers = (params = {}) => {
   const tab = params.tab || 'my';
   let rows = crmCustomerRows();
@@ -158,7 +176,7 @@ async function mockAdapter(config) {
   const params = config.params || {};
 
   if (url === '/api/auth/login') {
-    const user = users.find(u => u.username === body.username && u.password === body.password);
+    const user = users.find(u => u.username === body.username && getDemoPassword(u) === body.password);
     return user ? res(config, { ok: true, msg: '登录成功', token: `demo-token-${user.id}-${Date.now()}`, user: publicUser(user) }) : res(config, { ok: false, msg: '账号或密码错误，默认账号 admin / 123456' }, 400);
   }
   if (url === '/api/auth/register') {
@@ -169,6 +187,18 @@ async function mockAdapter(config) {
   if (url === '/api/auth/me') {
     const token = String(config.headers?.Authorization || '').replace(/^Bearer\s+/i, '');
     return res(config, { ok: true, user: publicUser(users.find(u => u.id === Number(token.split('-')[2])) || users[0]) });
+  }
+  if (url === '/api/auth/change-password' && method === 'post') {
+    const token = String(config.headers?.Authorization || '').replace(/^Bearer\s+/i, '');
+    const user = users.find(u => u.id === Number(token.split('-')[2]));
+    if (!user) return res(config, { ok: false, msg: '登录已失效，请重新登录' }, 401);
+    if (!body.current_password || !body.new_password) return res(config, { ok: false, msg: '当前密码和新密码不能为空' }, 400);
+    if (String(body.new_password).length < 6) return res(config, { ok: false, msg: '新密码至少6位' }, 400);
+    if (String(body.new_password).length > 128) return res(config, { ok: false, msg: '新密码不能超过128位' }, 400);
+    if (getDemoPassword(user) !== body.current_password) return res(config, { ok: false, msg: '当前密码错误' }, 400);
+    if (body.current_password === body.new_password) return res(config, { ok: false, msg: '新密码不能与当前密码相同' }, 400);
+    setDemoPassword(user.username, body.new_password);
+    return res(config, { ok: true, msg: '密码修改成功，请重新登录' });
   }
   if (url === '/api/analytics/summary') return res(config, {
     ok: true,

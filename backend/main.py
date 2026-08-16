@@ -124,6 +124,11 @@ class AuthLoginData(BaseModel):
     password: str = ""
 
 
+class ChangePasswordData(BaseModel):
+    current_password: str = ""
+    new_password: str = ""
+
+
 def create_token(user_id: int, username: str) -> str:
     expire = datetime.datetime.utcnow() + datetime.timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {"sub": str(user_id), "username": username, "exp": expire}
@@ -333,6 +338,34 @@ def auth_me(current_user: User = Depends(get_current_user)):
             "name": current_user.name, "phone": current_user.phone, "role": current_user.role,
         },
     }
+
+
+@app.post("/api/auth/change-password")
+def auth_change_password(
+    data: ChangePasswordData,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """修改当前用户密码。"""
+    if not current_user:
+        return JSONResponse({"ok": False, "msg": "登录已失效，请重新登录"}, 401)
+
+    current_password = data.current_password or ""
+    new_password = data.new_password or ""
+    if not current_password or not new_password:
+        return JSONResponse({"ok": False, "msg": "当前密码和新密码不能为空"}, 400)
+    if len(new_password) < 6:
+        return JSONResponse({"ok": False, "msg": "新密码至少6位"}, 400)
+    if len(new_password) > 128:
+        return JSONResponse({"ok": False, "msg": "新密码不能超过128位"}, 400)
+    if not verify_password(current_password, current_user.password_hash):
+        return JSONResponse({"ok": False, "msg": "当前密码错误"}, 400)
+    if current_password == new_password:
+        return JSONResponse({"ok": False, "msg": "新密码不能与当前密码相同"}, 400)
+
+    current_user.password_hash = hash_password(new_password)
+    db.commit()
+    return {"ok": True, "msg": "密码修改成功，请重新登录"}
 
 
 # ═══════════════════════════════════════════════
