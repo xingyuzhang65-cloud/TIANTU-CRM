@@ -209,6 +209,14 @@ export default function LeadCustomerHomeScreen({ navigation }) {
     return '#94a3b8';
   };
 
+  const getStageKey = (item) => {
+    if (item._type === 'lead') return 'developing';
+    if (item.lifecycle_status === 'negotiating') return 'quoted';
+    if (item.lifecycle_status === 'active') return 'cooperating';
+    if (item.lifecycle_status === 'disqualified') return 'churned';
+    return 'developing';
+  };
+
   const openFollow = (item) => {
     setFollowTarget(item);
     setFollowType('call');

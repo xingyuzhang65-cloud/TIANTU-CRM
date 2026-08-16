@@ -7,8 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('123456');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -35,11 +35,11 @@ export default function LoginScreen({ navigation }) {
         <Text style={styles.subtitle}>销售团队移动工作台</Text>
       </View>
       <View style={styles.form}>
-        <Text style={styles.label}>手机号</Text>
+        <Text style={styles.label}>账号</Text>
         <TextInput
           style={styles.input}
-          placeholder="请输入手机号"
-          keyboardType="phone-pad"
+          placeholder="请输入账号"
+          keyboardType="default"
           value={username}
           onChangeText={setUsername}
           autoCapitalize="none"
