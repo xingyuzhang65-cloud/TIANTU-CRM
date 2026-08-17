@@ -58,6 +58,11 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
   const [quoteRefreshing, setQuoteRefreshing] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [shareQuote, setShareQuote] = useState(null);
+  const [aiQuote, setAiQuote] = useState(null);
+  const [aiQuoting, setAiQuoting] = useState(false);
+  const [aiForm, setAiForm] = useState({
+    route_type: '海派', cargo_type: '普货', weight: '1000', volume: '5', incoterms: 'DDP',
+  });
 
   // New inquiry form
   const [form, setForm] = useState({
@@ -137,8 +142,35 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
     setPasteText('');
   };
 
+  const handleSmartQuote = async () => {
+    if (!Number(aiForm.weight) && !Number(aiForm.volume)) {
+      Alert.alert('提示', '请填写重量或体积');
+      return;
+    }
+    setAiQuoting(true);
+    try {
+      const res = await client.get('/api/ai/smart_quote', { params: aiForm });
+      if (res.ok) setAiQuote(res);
+    } catch (e) {
+      Alert.alert('智能报价失败', e.message);
+    } finally {
+      setAiQuoting(false);
+    }
+  };
+
   const cargoModeLabel = (mode) => CARGO_MODES.find(c => c.key === mode)?.label || mode;
   const isFCL = form.cargo_mode === 'FCL';
+  const aiCompanyPrice = aiQuote?.price_breakdown?.本公司报价
+    || aiQuote?.market_comparison?.本公司报价
+    || aiQuote?.breakdown?.estimated_total
+    || aiQuote?.estimated_price
+    || 0;
+  const aiMarketPrice = aiQuote?.price_breakdown?.竞品均价
+    || aiQuote?.market_comparison?.行业均价
+    || 0;
+  const aiSavingRatio = aiQuote?.price_breakdown?.节约比例
+    || aiQuote?.market_comparison?.节约比例
+    || '-';
 
   const cargoSummary = (item) => {
     if (item.cargo_mode === 'FCL') return `${item.container_count || 1}×${item.container_type || '40HQ'}`;
@@ -253,6 +285,12 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
         >
           <Text style={[styles.segmentText, activeTab === 'quotation' && styles.segmentTextActive]}>我的报价</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segment, activeTab === 'ai' && styles.segmentActive]}
+          onPress={() => setActiveTab('ai')}
+        >
+          <Text style={[styles.segmentText, activeTab === 'ai' && styles.segmentTextActive]}>AI核价</Text>
+        </TouchableOpacity>
       </View>
 
       {/* === 客户询价 TAB === */}
@@ -295,6 +333,82 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
           ListEmptyComponent={<EmptyState icon="💰" title="暂无报价单" />}
           contentContainerStyle={quotes.length === 0 ? { flex: 1 } : { paddingBottom: 20 }}
         />
+      )}
+
+      {activeTab === 'ai' && (
+        <ScrollView style={styles.aiQuoteBody} showsVerticalScrollIndicator={false}>
+          <View style={styles.aiIntroRow}>
+            <View style={styles.aiIntroIcon}>
+              <Ionicons name="sparkles" size={21} color="#2563eb" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiIntroTitle}>智能报价测算</Text>
+              <Text style={styles.aiIntroDesc}>根据运输方式、货量和品类生成报价建议</Text>
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>运输方式</Text>
+          <View style={styles.chipRow}>
+            {ROUTE_TYPES.map(item => (
+              <TouchableOpacity key={item} style={[styles.chip, aiForm.route_type === item && styles.chipActive]} onPress={() => setAiForm({ ...aiForm, route_type: item })}>
+                <Text style={[styles.chipText, aiForm.route_type === item && styles.chipTextActive]}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>货物品类</Text>
+          <View style={styles.chipRow}>
+            {CARGO_TYPES.map(item => (
+              <TouchableOpacity key={item} style={[styles.chip, aiForm.cargo_type === item && styles.chipActive]} onPress={() => setAiForm({ ...aiForm, cargo_type: item })}>
+                <Text style={[styles.chipText, aiForm.cargo_type === item && styles.chipTextActive]}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>重量 (kg)</Text>
+              <TextInput style={styles.fieldInput} keyboardType="numeric" value={aiForm.weight} onChangeText={value => setAiForm({ ...aiForm, weight: value })} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>体积 (cbm)</Text>
+              <TextInput style={styles.fieldInput} keyboardType="numeric" value={aiForm.volume} onChangeText={value => setAiForm({ ...aiForm, volume: value })} />
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>贸易条款</Text>
+          <View style={styles.chipRow}>
+            {INCOTERMS.map(item => (
+              <TouchableOpacity key={item} style={[styles.chip, aiForm.incoterms === item && styles.chipActive]} onPress={() => setAiForm({ ...aiForm, incoterms: item })}>
+                <Text style={[styles.chipText, aiForm.incoterms === item && styles.chipTextActive]}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity style={[styles.aiQuoteButton, aiQuoting && { opacity: 0.6 }]} onPress={handleSmartQuote} disabled={aiQuoting}>
+            <Ionicons name="calculator-outline" size={19} color="#fff" />
+            <Text style={styles.aiQuoteButtonText}>{aiQuoting ? '测算中...' : '生成报价建议'}</Text>
+          </TouchableOpacity>
+
+          {aiQuote && (
+            <View style={styles.aiResultCard}>
+              <View style={styles.aiResultHeader}>
+                <View>
+                  <Text style={styles.aiResultLabel}>建议报价</Text>
+                  <Text style={styles.aiResultPrice}>¥{Number(aiCompanyPrice).toLocaleString()}</Text>
+                </View>
+                <StatusBadge label={aiQuote.estimated_days || `${aiQuote.chargeable_weight || '-'}kg计费重`} color="green" />
+              </View>
+              <View style={styles.aiCompareRow}>
+                <Text style={styles.aiCompareText}>竞品均价 ¥{Number(aiMarketPrice).toLocaleString()}</Text>
+                <Text style={styles.aiSaving}>预计节约 {aiSavingRatio}</Text>
+              </View>
+              <Text style={styles.aiPitch}>{aiQuote.suggested_pitch ? `建议话术：${aiQuote.suggested_pitch}` : aiQuote.calculation}</Text>
+              <Text style={styles.aiValidity}>有效期至 {aiQuote.valid_until}</Text>
+            </View>
+          )}
+          <View style={{ height: 28 }} />
+        </ScrollView>
       )}
 
       {/* === 新建询价表单 Modal === */}
@@ -535,6 +649,22 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2, elevation: 1 },
   segmentText: { fontSize: 14, fontWeight: '500', color: '#64748b' },
   segmentTextActive: { color: '#2563eb', fontWeight: '600' },
+  aiQuoteBody: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+  aiIntroRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', borderRadius: 10, padding: 13, marginBottom: 10 },
+  aiIntroIcon: { width: 40, height: 40, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  aiIntroTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  aiIntroDesc: { fontSize: 11, color: '#64748b', marginTop: 3 },
+  aiQuoteButton: { minHeight: 46, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#2563eb', borderRadius: 9, marginTop: 20 },
+  aiQuoteButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  aiResultCard: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#bfdbfe', padding: 15, marginTop: 14 },
+  aiResultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  aiResultLabel: { fontSize: 12, color: '#64748b' },
+  aiResultPrice: { fontSize: 28, fontWeight: '700', color: '#2563eb', marginTop: 3 },
+  aiCompareRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, marginTop: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  aiCompareText: { fontSize: 12, color: '#64748b' },
+  aiSaving: { fontSize: 12, fontWeight: '600', color: '#16a34a' },
+  aiPitch: { fontSize: 12, lineHeight: 18, color: '#334155', marginTop: 10 },
+  aiValidity: { fontSize: 11, color: '#94a3b8', marginTop: 7 },
 
   // Filter
   filterRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#fff', gap: 8 },

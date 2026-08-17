@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import client from '../../api/client';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
+import { useAuth } from '../../context/AuthContext';
 
 const STAGE_OPTIONS = [
   { key: 'developing', label: '开发中' },
@@ -71,7 +72,17 @@ const FOLLOW_TYPES = [
   { key: 'visit', label: '🏢 拜访' },
 ];
 
+const CUSTOMER_VIEWS = [
+  { key: 'my', label: '我的客户' },
+  { key: 'pool', label: '公司池' },
+  { key: 'expiring', label: '即将掉保' },
+  { key: 'all', label: '全部' },
+  { key: 'closed', label: '成交客户' },
+];
+
 export default function LeadCustomerHomeScreen({ navigation }) {
+  const { user } = useAuth();
+  const [viewMode, setViewMode] = useState('lifecycle');
   const [items, setItems] = useState([]);
   const [keyword, setKeyword] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -79,6 +90,9 @@ export default function LeadCustomerHomeScreen({ navigation }) {
   const [activeSubTab, setActiveSubTab] = useState('all');
   const [stageCounts, setStageCounts] = useState({});
   const [reminders, setReminders] = useState([]);
+  const [customerView, setCustomerView] = useState('my');
+  const [customerViewItems, setCustomerViewItems] = useState([]);
+  const [customerViewCounts, setCustomerViewCounts] = useState({});
 
   // Quick follow-up modal
   const [followVisible, setFollowVisible] = useState(false);
@@ -173,6 +187,22 @@ export default function LeadCustomerHomeScreen({ navigation }) {
   }, [keyword, activeStage, activeSubTab]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const fetchCustomerViews = useCallback(async () => {
+    try {
+      const res = await client.get('/api/crm/customers', {
+        params: { tab: customerView, keyword: keyword.trim() || undefined, page_size: 30 },
+      });
+      if (res.ok) {
+        setCustomerViewItems(res.records || []);
+        setCustomerViewCounts(res.tab_counts || {});
+      }
+    } catch {}
+  }, [customerView, keyword]);
+
+  useEffect(() => {
+    if (viewMode === 'customerViews') fetchCustomerViews();
+  }, [viewMode, fetchCustomerViews]);
 
   const onRefresh = async () => { setRefreshing(true); await fetchAll(); setRefreshing(false); };
 
@@ -565,6 +595,36 @@ export default function LeadCustomerHomeScreen({ navigation }) {
     );
   };
 
+  const renderCustomerViewItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => navigation.navigate('CustomerDetail', { customerId: item.id })}
+    >
+      <View style={styles.cardTop}>
+        <Text style={styles.company} numberOfLines={1}>{item.company_name || item.customer_name}</Text>
+        <StatusBadge
+          label={item.ownership_label || '我的客户'}
+          color={item.ownership_status === 'COMPANY_POOL' ? 'orange' : item.ownership_status === 'EXPIRING_PROTECTION' ? 'red' : item.ownership_status === 'CLOSED_CUSTOMER' ? 'green' : 'blue'}
+        />
+      </View>
+      <Text style={styles.viewContact}>{item.masked_mobile || '-'} · {item.owner || item.owner_name || '未分配'}</Text>
+      <View style={styles.viewMetaRow}>
+        <View style={styles.viewMetaItem}>
+          <Text style={styles.metricLabel}>跟进状态</Text>
+          <Text style={styles.viewMetaValue}>{item.follow_status_label || '跟进中'}</Text>
+        </View>
+        <View style={styles.viewMetaItem}>
+          <Text style={styles.metricLabel}>{customerView === 'closed' ? '成交时间' : '保护到期'}</Text>
+          <Text style={styles.viewMetaValue}>{String(item.closed_at || item.protect_expire_at || '-').slice(0, 10)}</Text>
+        </View>
+      </View>
+      <View style={styles.latestFollow}>
+        <Ionicons name="chatbubble-ellipses-outline" size={14} color="#64748b" />
+        <Text style={styles.latestFollowText} numberOfLines={1}>{item.latest_follow?.content || '暂无最近跟进'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -574,6 +634,20 @@ export default function LeadCustomerHomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {user?.role === 'admin' && (
+        <View style={styles.viewModeBar}>
+          <TouchableOpacity style={[styles.viewModeButton, viewMode === 'lifecycle' && styles.viewModeButtonActive]} onPress={() => setViewMode('lifecycle')}>
+            <Ionicons name="git-branch-outline" size={16} color={viewMode === 'lifecycle' ? '#2563eb' : '#64748b'} />
+            <Text style={[styles.viewModeText, viewMode === 'lifecycle' && styles.viewModeTextActive]}>生命周期</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.viewModeButton, viewMode === 'customerViews' && styles.viewModeButtonActive]} onPress={() => setViewMode('customerViews')}>
+            <Ionicons name="layers-outline" size={16} color={viewMode === 'customerViews' ? '#2563eb' : '#64748b'} />
+            <Text style={[styles.viewModeText, viewMode === 'customerViews' && styles.viewModeTextActive]}>客户视图</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {viewMode === 'lifecycle' ? <>
       {/* ── PRD V2.1: 4-Stage Tab Bar ── */}
       <View style={styles.stageTabBar}>
         {STAGE_OPTIONS.map(opt => {
@@ -611,20 +685,32 @@ export default function LeadCustomerHomeScreen({ navigation }) {
           ))}
         </ScrollView>
       </View>
+      </> : (
+        <View style={styles.customerViewBar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {CUSTOMER_VIEWS.map(item => (
+              <TouchableOpacity key={item.key} style={[styles.customerViewChip, customerView === item.key && styles.customerViewChipActive]} onPress={() => setCustomerView(item.key)}>
+                <Text style={[styles.customerViewLabel, customerView === item.key && styles.customerViewLabelActive]}>{item.label}</Text>
+                <Text style={[styles.customerViewCount, customerView === item.key && styles.customerViewCountActive]}>{customerViewCounts[item.key] || 0}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={styles.searchBox}>
         <Ionicons name="search" size={18} color="#94a3b8" />
-        <TextInput style={styles.searchInput} placeholder="搜索公司名称..." value={keyword} onChangeText={setKeyword} onSubmitEditing={fetchAll} />
+        <TextInput style={styles.searchInput} placeholder="搜索公司名称..." value={keyword} onChangeText={setKeyword} onSubmitEditing={viewMode === 'customerViews' ? fetchCustomerViews : fetchAll} />
         {keyword ? <TouchableOpacity onPress={() => setKeyword('')}><Ionicons name="close-circle" size={18} color="#94a3b8" /></TouchableOpacity> : null}
       </View>
 
       <FlatList
-        data={items}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        data={viewMode === 'customerViews' ? customerViewItems : items}
+        keyExtractor={item => String(item.id)}
+        renderItem={viewMode === 'customerViews' ? renderCustomerViewItem : renderItem}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await (viewMode === 'customerViews' ? fetchCustomerViews() : fetchAll()); setRefreshing(false); }} />}
         ListEmptyComponent={<EmptyState icon="📋" title="暂无数据" desc="点击右上角 + 创建新线索" />}
-        contentContainerStyle={items.length === 0 ? { flex: 1 } : { paddingBottom: 20 }}
+        contentContainerStyle={(viewMode === 'customerViews' ? customerViewItems : items).length === 0 ? { flex: 1 } : { paddingBottom: 20 }}
       />
 
       {/* Quick Follow-up Modal — centered card */}
@@ -737,6 +823,18 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12, backgroundColor: '#fff' },
   title: { fontSize: 22, fontWeight: '700', color: '#0f172a' },
   addBtn: {},
+  viewModeBar: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10, marginBottom: 4, padding: 3, borderRadius: 9, backgroundColor: '#e2e8f0' },
+  viewModeButton: { flex: 1, minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 7 },
+  viewModeButtonActive: { backgroundColor: '#fff' },
+  viewModeText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  viewModeTextActive: { color: '#2563eb' },
+  customerViewBar: { backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 9 },
+  customerViewChip: { minWidth: 86, alignItems: 'center', marginRight: 7, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' },
+  customerViewChipActive: { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
+  customerViewLabel: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  customerViewLabelActive: { color: '#2563eb' },
+  customerViewCount: { fontSize: 15, color: '#94a3b8', fontWeight: '700', marginTop: 2 },
+  customerViewCountActive: { color: '#2563eb' },
 
   // ── PRD V2.1: Stage+Sub-tab bar ──
   stageTabBar: { flexDirection: 'row', backgroundColor: '#fff', paddingHorizontal: 12, paddingBottom: 4, paddingTop: 8, gap: 4 },
@@ -773,6 +871,10 @@ const styles = StyleSheet.create({
   metric: { alignItems: 'center' },
   metricLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 2 },
   metricVal: { fontSize: 15, fontWeight: '600', color: '#334155' },
+  viewContact: { fontSize: 12, color: '#64748b', marginBottom: 10 },
+  viewMetaRow: { flexDirection: 'row', backgroundColor: '#f8fafc', borderRadius: 8, padding: 10 },
+  viewMetaItem: { flex: 1 },
+  viewMetaValue: { fontSize: 13, color: '#334155', fontWeight: '600', marginTop: 3 },
   latestFollow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingTop: 8, paddingBottom: 2 },
   latestFollowIcon: { fontSize: 12, marginRight: 4 },
   latestFollowText: { flex: 1, fontSize: 12, color: '#64748b', lineHeight: 17 },

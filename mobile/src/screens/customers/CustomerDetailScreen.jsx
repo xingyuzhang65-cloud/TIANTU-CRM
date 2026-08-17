@@ -26,6 +26,8 @@ export default function CustomerDetailScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [meetingSummary, setMeetingSummary] = useState(null);
   const [activities, setActivities] = useState([]);
 
   const fetchData = useCallback(async () => {
@@ -110,6 +112,42 @@ export default function CustomerDetailScreen({ route, navigation }) {
       const res = await client.get('/api/ai/customer_insight', { params: { customer_id: customerId } });
       if (res.ok) setAiInsight(res);
     } catch {}
+  };
+
+  const handleVoiceStructure = async () => {
+    setAiProcessing(true);
+    try {
+      const res = await client.get('/api/ai/voice_log', {
+        params: { customer_name: cust?.company_name, content: followContent || '电话沟通确认客户需求' },
+      });
+      if (res.ok) {
+        setFollowContent(res.structured_log || followContent);
+        Alert.alert('AI整理完成', `已生成结构化跟进内容，质量评分：${res.quality_check?.评分 || '完成'}`);
+      }
+    } catch (e) {
+      Alert.alert('AI整理失败', e.message);
+    } finally {
+      setAiProcessing(false);
+    }
+  };
+
+  const handleMeetingSummary = async () => {
+    setAiProcessing(true);
+    try {
+      const res = await client.get('/api/ai/meeting_summary', { params: { meeting_type: '客户拜访' } });
+      if (res.ok) {
+        setMeetingSummary(res);
+        setFollowType('meeting');
+        setFollowContent([
+          ...(res.post_meeting?.key_topics || []),
+          ...(res.post_meeting?.action_items || []).map(item => `行动项：${item}`),
+        ].join('\n'));
+      }
+    } catch (e) {
+      Alert.alert('会议总结失败', e.message);
+    } finally {
+      setAiProcessing(false);
+    }
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>;
@@ -375,6 +413,23 @@ export default function CustomerDetailScreen({ route, navigation }) {
               </View>
               <Text style={styles.followLabel}>跟进内容</Text>
               <TextInput style={styles.followInput} placeholder="输入跟进内容..." value={followContent} onChangeText={setFollowContent} multiline autoFocus />
+              <View style={styles.aiFollowTools}>
+                <TouchableOpacity style={styles.aiFollowTool} onPress={handleVoiceStructure} disabled={aiProcessing}>
+                  <Ionicons name="mic-outline" size={17} color="#2563eb" />
+                  <Text style={styles.aiFollowToolText}>AI整理跟进</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.aiFollowTool} onPress={handleMeetingSummary} disabled={aiProcessing}>
+                  <Ionicons name="document-text-outline" size={17} color="#ea580c" />
+                  <Text style={[styles.aiFollowToolText, { color: '#ea580c' }]}>生成会议纪要</Text>
+                </TouchableOpacity>
+              </View>
+              {meetingSummary && (
+                <View style={styles.meetingBrief}>
+                  <Text style={styles.meetingBriefTitle}>会前简报</Text>
+                  <Text style={styles.meetingBriefText}>{meetingSummary.pre_meeting?.brief}</Text>
+                  {meetingSummary.post_meeting?.risk_flag ? <Text style={styles.meetingRisk}>风险：{meetingSummary.post_meeting.risk_flag}</Text> : null}
+                </View>
+              )}
               <Text style={styles.followLabel}>图片附件（可选）</Text>
               <View style={styles.imageGrid}>
                 {followImages.map((img, idx) => (
@@ -473,6 +528,13 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 13, color: '#64748b' },
   typeTextActive: { color: '#fff' },
   followInput: { backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, fontSize: 14, minHeight: 60, borderWidth: 1, borderColor: '#e2e8f0', textAlignVertical: 'top' },
+  aiFollowTools: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  aiFollowTool: { flex: 1, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: '#eff6ff', borderRadius: 8 },
+  aiFollowToolText: { fontSize: 12, fontWeight: '600', color: '#2563eb' },
+  meetingBrief: { backgroundColor: '#fff7ed', borderRadius: 8, padding: 10, marginTop: 9 },
+  meetingBriefTitle: { fontSize: 12, fontWeight: '700', color: '#9a3412' },
+  meetingBriefText: { fontSize: 11, lineHeight: 17, color: '#475569', marginTop: 4 },
+  meetingRisk: { fontSize: 11, lineHeight: 17, color: '#dc2626', marginTop: 4 },
   // Image picker
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   imageWrapper: { position: 'relative' },

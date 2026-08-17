@@ -1546,6 +1546,107 @@ def api_customer_list(
     return {"ok": True, "customers": result, "total": len(result)}
 
 
+@app.get("/api/crm/customers")
+def api_crm_customer_views(
+    tab: str = Query("my", comment="my/pool/expiring/all/closed"),
+    keyword: str = Query(None),
+    page_size: int = Query(30, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """管理视角客户五视图，复用现有客户归属和跟进数据。"""
+    customers = db.query(Customer).order_by(desc(Customer.avg_monthly_revenue)).all()
+    customer_ids = [customer.id for customer in customers]
+    latest_activity = {}
+    if customer_ids:
+        activities = db.query(ActivityLog).filter(
+            ActivityLog.customer_id.in_(customer_ids)
+        ).order_by(desc(ActivityLog.created_at)).all()
+        for activity in activities:
+            if activity.customer_id not in latest_activity:
+                latest_activity[activity.customer_id] = activity
+
+    now = _now()
+    rows = []
+    for customer in customers:
+        activity = latest_activity.get(customer.id)
+        protect_base = activity.created_at if activity else customer.created_at
+        protect_expire_at = protect_base + datetime.timedelta(days=30) if protect_base else None
+        is_closed = customer.lifecycle_status in STAGE_STATUS_MAP.get(STAGE_COOPERATING, [])
+        is_pool = not customer.owner_id and not customer.owner
+        is_mine = bool(current_user) and (
+            customer.owner_id == current_user.id or customer.owner == current_user.name
+        )
+        is_expiring = bool(
+            not is_pool and protect_expire_at and now <= protect_expire_at <= now + datetime.timedelta(days=7)
+        )
+
+        ownership_status, ownership_label = "MY_CUSTOMER", "我的客户"
+        if is_pool:
+            ownership_status, ownership_label = "COMPANY_POOL", "公司池"
+        elif is_expiring:
+            ownership_status, ownership_label = "EXPIRING_PROTECTION", "即将掉保"
+        elif is_closed:
+            ownership_status, ownership_label = "CLOSED_CUSTOMER", "成交客户"
+
+        rows.append({
+            "id": customer.id,
+            "customer_name": customer.company_name,
+            "company_name": customer.company_name,
+            "masked_mobile": f"{customer.phone[:3]}****{customer.phone[-4:]}" if customer.phone and len(customer.phone) >= 7 else (customer.phone or "-"),
+            "owner": customer.owner or "",
+            "owner_name": customer.owner or "",
+            "ownership_status": ownership_status,
+            "ownership_label": ownership_label,
+            "follow_status": customer.lifecycle_status,
+            "follow_status_label": STATUS_LABELS.get(customer.lifecycle_status, customer.lifecycle_status),
+            "latest_follow": {
+                "content": activity.content,
+                "created_at": str(activity.created_at),
+            } if activity else None,
+            "protect_expire_at": str(protect_expire_at) if protect_expire_at else None,
+            "closed_at": str(customer.status_changed_at or customer.cooperation_since or customer.created_at) if is_closed else None,
+            "tags": [value for value in [customer.customer_type, customer.customer_level, customer.main_category] if value],
+            "_is_mine": is_mine,
+            "_is_pool": is_pool,
+            "_is_expiring": is_expiring,
+            "_is_closed": is_closed,
+        })
+
+    if keyword:
+        normalized = keyword.strip().lower()
+        rows = [row for row in rows if normalized in " ".join([
+            row["company_name"], row["masked_mobile"], row["owner"],
+        ]).lower()]
+
+    tab_counts = {
+        "my": sum(1 for row in rows if row["_is_mine"]),
+        "pool": sum(1 for row in rows if row["_is_pool"]),
+        "expiring": sum(1 for row in rows if row["_is_expiring"]),
+        "all": len(rows),
+        "closed": sum(1 for row in rows if row["_is_closed"]),
+    }
+    predicates = {
+        "my": lambda row: row["_is_mine"],
+        "pool": lambda row: row["_is_pool"],
+        "expiring": lambda row: row["_is_expiring"],
+        "all": lambda row: True,
+        "closed": lambda row: row["_is_closed"],
+    }
+    selected = [row for row in rows if predicates.get(tab, predicates["my"])(row)][:page_size]
+    for row in selected:
+        for internal_key in ("_is_mine", "_is_pool", "_is_expiring", "_is_closed"):
+            row.pop(internal_key, None)
+    return {
+        "ok": True,
+        "records": selected,
+        "total": tab_counts.get(tab, tab_counts["my"]),
+        "tab_counts": tab_counts,
+        "page": 1,
+        "page_size": page_size,
+    }
+
+
 @app.put("/api/customer/{cid}/stage")
 def update_customer_stage(cid: int, stage: str = Query(...), db: Session = Depends(get_db)):
     """快捷编辑客户阶段"""
@@ -1813,6 +1914,8 @@ def ai_smart_quote(route_type: str = Query("海派"), weight: float = Query(100)
             "本公司报价": round(estimated + chargeable * fuel, 2),
             "节约比例": "约8%",
         },
+        "estimated_days": "3-5天" if route_type == "空派" else "12-18天",
+        "suggested_pitch": "建议主推稳定时效和异常可视化追踪，可提供季度包量优惠。",
         "valid_until": (_date() + datetime.timedelta(days=14)).isoformat(),
     }
 

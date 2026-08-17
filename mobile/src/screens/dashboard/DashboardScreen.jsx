@@ -27,6 +27,8 @@ const BANNERS = [
 export default function DashboardScreen() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [creditData, setCreditData] = useState({ summary: {}, credits: [] });
+  const [churnItems, setChurnItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [bannerIdx, setBannerIdx] = useState(0);
   const [adModal, setAdModal] = useState(null);
@@ -36,8 +38,14 @@ export default function DashboardScreen() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await client.get('/api/analytics/summary');
-      if (res.ok) setData(res);
+      const [summaryRes, creditRes, churnRes] = await Promise.all([
+        client.get('/api/analytics/summary'),
+        client.get('/api/credits/list'),
+        client.get('/api/ai/churn_prediction'),
+      ]);
+      if (summaryRes.ok) setData(summaryRes);
+      if (creditRes.ok) setCreditData({ summary: creditRes.summary || {}, credits: creditRes.credits || [] });
+      if (churnRes.ok) setChurnItems(churnRes.items || []);
     } catch {}
   }, []);
 
@@ -81,6 +89,11 @@ export default function DashboardScreen() {
   };
 
   const cards = data?.cards || [];
+  const healthDistribution = data?.health_distribution || [];
+  const creditSummary = creditData.summary || {};
+  const overdueCredits = creditData.credits.filter(item => item.days_aged > 30 || item.is_blacklisted);
+  const highChurnItems = churnItems.filter(item => item.risk_score >= 70);
+  const isAdmin = user?.role === 'admin';
 
   return (
     <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
@@ -269,6 +282,61 @@ export default function DashboardScreen() {
         />
       </View>
 
+      {isAdmin && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeadingRow}>
+            <Text style={styles.sectionTitle}>客户健康与经营分析</Text>
+            <Text style={styles.sectionMeta}>管理视角</Text>
+          </View>
+          <View style={styles.healthPanel}>
+            {healthDistribution.map(item => (
+              <View key={item.name} style={styles.healthItem}>
+                <View style={[styles.healthDot, { backgroundColor: item.color }]} />
+                <Text style={styles.healthName}>{item.name}</Text>
+                <Text style={styles.healthValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {isAdmin && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeadingRow}>
+            <Text style={styles.sectionTitle}>风控与授信预警</Text>
+            <Text style={styles.sectionMeta}>{overdueCredits.length + highChurnItems.length} 项待处理</Text>
+          </View>
+          <View style={styles.riskSummaryRow}>
+            <View style={styles.riskSummaryItem}>
+              <Text style={styles.riskLabel}>应收余额</Text>
+              <Text style={styles.riskValue}>{((creditSummary.total_balance || 0) / 10000).toFixed(1)}万</Text>
+            </View>
+            <View style={styles.riskDivider} />
+            <View style={styles.riskSummaryItem}>
+              <Text style={styles.riskLabel}>超期应收</Text>
+              <Text style={[styles.riskValue, { color: '#dc2626' }]}>{((creditSummary.overdue || 0) / 10000).toFixed(1)}万</Text>
+            </View>
+            <View style={styles.riskDivider} />
+            <View style={styles.riskSummaryItem}>
+              <Text style={styles.riskLabel}>高流失风险</Text>
+              <Text style={[styles.riskValue, { color: '#ea580c' }]}>{highChurnItems.length}</Text>
+            </View>
+          </View>
+          {[...overdueCredits.slice(0, 2), ...highChurnItems.slice(0, 2)].map((item, index) => (
+            <View key={`${item.customer_id || item.id}-${index}`} style={styles.riskRow}>
+              <Ionicons name={item.risk_score ? 'warning-outline' : 'shield-outline'} size={18} color={item.risk_score >= 70 || item.is_blacklisted ? '#dc2626' : '#ea580c'} />
+              <View style={styles.riskContent}>
+                <Text style={styles.riskCompany} numberOfLines={1}>{item.company_name}</Text>
+                <Text style={styles.riskDesc} numberOfLines={1}>
+                  {item.risk_score ? `${item.factors?.join(' · ')} · 建议立即跟进` : `欠款 ${(item.balance_due / 10000).toFixed(1)}万 · 账龄 ${item.days_aged}天`}
+                </Text>
+              </View>
+              {item.risk_score ? <Text style={styles.riskScore}>{item.risk_score}</Text> : null}
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>最近动态</Text>
         <ActivityTimeline activities={[
@@ -335,5 +403,22 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', marginBottom: 6 },
   section: { marginTop: 20, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a', marginBottom: 12 },
+  sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionMeta: { fontSize: 11, color: '#94a3b8', marginBottom: 12 },
   chart: { borderRadius: 12, marginLeft: -8 },
+  healthPanel: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#eef2f7', paddingHorizontal: 14 },
+  healthItem: { flexDirection: 'row', alignItems: 'center', minHeight: 44, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  healthDot: { width: 9, height: 9, borderRadius: 5, marginRight: 9 },
+  healthName: { flex: 1, fontSize: 13, color: '#475569' },
+  healthValue: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  riskSummaryRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, paddingVertical: 13, borderWidth: 1, borderColor: '#fee2e2' },
+  riskSummaryItem: { flex: 1, alignItems: 'center' },
+  riskLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 4 },
+  riskValue: { fontSize: 17, fontWeight: '700', color: '#334155' },
+  riskDivider: { width: 1, height: 30, backgroundColor: '#e2e8f0' },
+  riskRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 9, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#f1f5f9' },
+  riskContent: { flex: 1, marginLeft: 9, marginRight: 8 },
+  riskCompany: { fontSize: 13, fontWeight: '600', color: '#0f172a' },
+  riskDesc: { fontSize: 11, color: '#64748b', marginTop: 3 },
+  riskScore: { fontSize: 20, fontWeight: '700', color: '#dc2626' },
 });
