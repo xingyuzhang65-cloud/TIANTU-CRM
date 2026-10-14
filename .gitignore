@@ -12,3 +12,9 @@ mobile/dist/
 mobile/dist-new/
 frontend/.vite/
 node_modules/
+mobile/dist-app/
+qa/
+README-local.md
+upgrade-local.cjs
+polish-ui.cjs
+publish-local.cjs

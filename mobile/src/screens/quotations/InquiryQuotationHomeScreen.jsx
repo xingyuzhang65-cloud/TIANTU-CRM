@@ -1,3 +1,5 @@
+import { copyText } from '../../components/AppFeedback';
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, RefreshControl,
@@ -43,7 +45,7 @@ function formatTime(t) {
   return d.toLocaleDateString('zh-CN');
 }
 
-export default function InquiryQuotationHomeScreen({ navigation }) {
+export default function InquiryQuotationHomeScreen({ navigation, route, embedded = false }) {
   const [activeTab, setActiveTab] = useState('inquiry');
 
   // Inquiry state
@@ -52,6 +54,7 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
   const [inqFilter, setInqFilter] = useState('all');
   const [inqRefreshing, setInqRefreshing] = useState(false);
   const [showInquiryForm, setShowInquiryForm] = useState(false);
+  useEffect(() => { if (route?.params?.createInquiry) { setActiveTab('inquiry'); setShowInquiryForm(true); navigation.setParams?.({ createInquiry: undefined }); } }, [route?.params?.createInquiry]);
 
   // Quotation state
   const [quotes, setQuotes] = useState([]);
@@ -264,12 +267,14 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {!embedded && (
       <View style={styles.header}>
         <Text style={styles.title}>询价与报价</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowInquiryForm(true)}>
           <Ionicons name="add-circle" size={40} color="#2563eb" />
         </TouchableOpacity>
       </View>
+      )}
 
       {/* Segmented control */}
       <View style={styles.segmentedBar}>
@@ -317,7 +322,7 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
             keyExtractor={item => String(item.id)}
             renderItem={renderInquiryItem}
             refreshControl={<RefreshControl refreshing={inqRefreshing} onRefresh={async () => { setInqRefreshing(true); await fetchInquiries(); setInqRefreshing(false); }} />}
-            ListEmptyComponent={<EmptyState icon="📋" title="暂无询价单" desc="点击右下角 + 新建询价" />}
+            ListEmptyComponent={<EmptyState icon="📋" title="暂无询价单" desc="点击右上角 + 新建询价" />}
             contentContainerStyle={inquiries.length === 0 ? { flex: 1 } : { paddingBottom: 80 }}
           />
         </>
@@ -602,7 +607,7 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
             <TouchableOpacity style={styles.actionItem} onPress={() => {
               const q = shareQuote;
               const text = `📋 ${q?.company_name || ''} 报价单\n━━━━━━\n起运/目的: ${q?.route_detail || ''}\n渠道: ${q?.route_type}\n货量: ${q?.weight_kg}KG / ${q?.volume_cbm}CBM\n单价: ${q?.currency === 'RMB' ? '¥' : '$'}${q?.base_price}/${q?.cargo_type === '普货' ? 'KG' : 'CBM'}\n总计: ${q?.currency === 'RMB' ? '¥' : '$'}${(q?.total_price || 0).toLocaleString()}\n有效期至: ${q?.valid_until || ''}`;
-              Alert.alert('已复制', '报价文本已复制到剪贴板\n\n' + text);
+              copyText(text);
               setShowShare(false);
             }}>
               <Ionicons name="copy-outline" size={24} color="#2563eb" />
@@ -612,19 +617,19 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionItem} onPress={() => { setShowShare(false); Alert.alert('提示', '海报已生成，请保存到相册后发送'); }}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => { setShowShare(false); Alert.alert('报价预览', `${shareQuote?.company_name}\n${shareQuote?.route_detail}\n报价 ¥${shareQuote?.total_price?.toLocaleString()}\n有效期至 ${shareQuote?.valid_until}`); }}>
               <Ionicons name="image-outline" size={24} color="#16a34a" />
               <View style={styles.actionItemText}>
-                <Text style={styles.actionItemTitle}>生成海报分享</Text>
-                <Text style={styles.actionItemDesc}>含公司Logo与航线简况的精美图片</Text>
+                <Text style={styles.actionItemTitle}>查看报价预览</Text>
+                <Text style={styles.actionItemDesc}>查看公司、航线、总价和有效期</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionItem} onPress={() => { setShowShare(false); Alert.alert('提示', 'H5链接已复制，客户可在线确认报价并转为订单'); }}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => { setShowShare(false); copyText(`${shareQuote?.company_name} | ${shareQuote?.route_detail} | 报价 ¥${shareQuote?.total_price?.toLocaleString()} | 有效期 ${shareQuote?.valid_until}`); }}>
               <Ionicons name="link-outline" size={24} color="#ea580c" />
               <View style={styles.actionItemText}>
-                <Text style={styles.actionItemTitle}>发送动态链接</Text>
-                <Text style={styles.actionItemDesc}>H5在线报价单，客户可一键确认转单</Text>
+                <Text style={styles.actionItemTitle}>复制精简报价</Text>
+                <Text style={styles.actionItemDesc}>复制航线与报价信息，用于客户沟通</Text>
               </View>
             </TouchableOpacity>
 
@@ -638,7 +643,7 @@ export default function InquiryQuotationHomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12, backgroundColor: '#fff' },
   title: { fontSize: 22, fontWeight: '700', color: '#0f172a' },

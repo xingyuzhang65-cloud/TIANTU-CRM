@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
@@ -94,7 +95,7 @@ export default function CreateLeadScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12, backgroundColor: '#fff' },
   headerTitle: { fontSize: 17, fontWeight: '600', color: '#0f172a' },

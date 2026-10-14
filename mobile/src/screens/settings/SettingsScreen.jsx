@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
@@ -42,7 +43,8 @@ export default function SettingsScreen() {
         claim_daily_limit: String(config.claim_daily_limit),
         claim_private_limit: String(config.claim_private_limit),
       });
-      if (res.ok) Alert.alert('成功', '配置已保存');
+      if (!res.ok) throw new Error(res.msg || '保存失败');
+      Alert.alert('成功', '配置已保存');
     } catch (e) { Alert.alert('错误', e.message); }
     setSaving(false);
   };
@@ -114,7 +116,7 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>设置</Text>
+        <Text style={styles.title}>我的</Text>
       </View>
 
       <View style={styles.profileCard}>
@@ -147,29 +149,29 @@ export default function SettingsScreen() {
         <View style={styles.configCard}>
           <View style={styles.configRow}>
             <View style={styles.configLabel}>
-              <Text style={styles.configTitle}>未跟进回收 (N天)</Text>
-              <Text style={styles.configDesc}>线索N天未跟进自动回公海</Text>
+              <Text style={styles.configTitle}>未跟进回收</Text>
+              <Text style={styles.configDesc}>超过设定天数未跟进，回到公海</Text>
             </View>
             <TextInput style={styles.configInput} keyboardType="numeric" value={config.reclaim_no_follow_days} onChangeText={v => setConfig({ ...config, reclaim_no_follow_days: v })} />
           </View>
           <View style={styles.configRow}>
             <View style={styles.configLabel}>
-              <Text style={styles.configTitle}>未转化回收 (M天)</Text>
-              <Text style={styles.configDesc}>线索M天未转化自动回公海</Text>
+              <Text style={styles.configTitle}>未转化回收</Text>
+              <Text style={styles.configDesc}>超过设定天数未转化，回到公海</Text>
             </View>
             <TextInput style={styles.configInput} keyboardType="numeric" value={config.reclaim_no_convert_days} onChangeText={v => setConfig({ ...config, reclaim_no_convert_days: v })} />
           </View>
           <View style={styles.configRow}>
             <View style={styles.configLabel}>
-              <Text style={styles.configTitle}>每日认领上限 (X条)</Text>
-              <Text style={styles.configDesc}>每人每天最多认领线索数</Text>
+              <Text style={styles.configTitle}>每日认领上限</Text>
+              <Text style={styles.configDesc}>每位成员每天可认领的线索数</Text>
             </View>
             <TextInput style={styles.configInput} keyboardType="numeric" value={config.claim_daily_limit} onChangeText={v => setConfig({ ...config, claim_daily_limit: v })} />
           </View>
           <View style={[styles.configRow, { borderBottomWidth: 0 }]}>
             <View style={styles.configLabel}>
-              <Text style={styles.configTitle}>私海容量上限 (Y条)</Text>
-              <Text style={styles.configDesc}>每人私海最多持有线索数</Text>
+              <Text style={styles.configTitle}>私海容量上限</Text>
+              <Text style={styles.configDesc}>每位成员可持有的私海线索数</Text>
             </View>
             <TextInput style={styles.configInput} keyboardType="numeric" value={config.claim_private_limit} onChangeText={v => setConfig({ ...config, claim_private_limit: v })} />
           </View>
@@ -189,7 +191,7 @@ export default function SettingsScreen() {
         <Text style={styles.logoutText}>退出登录</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>跨境物流CRM v1.0 · Mobile</Text>
+      <Text style={styles.version}>天图 CRM · 销售工作台</Text>
       <View style={{ height: 40 }} />
 
       <Modal visible={passwordModalVisible} transparent animationType="fade" onRequestClose={closePasswordModal}>
@@ -262,7 +264,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12, backgroundColor: '#fff' },
   title: { fontSize: 22, fontWeight: '700', color: '#0f172a' },

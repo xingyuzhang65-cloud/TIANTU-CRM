@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
@@ -6,10 +7,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import * as ImagePicker from 'expo-image-picker';
-import client, { resolveBackendUrl } from '../../api/client';
+import client, { resolveBackendUrl, isDemoMode } from '../../api/client';
+import { localImageUrls } from '../../components/AppFeedback';
 import StatusBadge from '../../components/StatusBadge';
 
-const SCREEN_W = Dimensions.get('window').width;
+const SCREEN_W = Math.min(Dimensions.get('window').width, 480);
 
 export default function CustomerDetailScreen({ route, navigation }) {
   const { customerId } = route.params;
@@ -72,6 +74,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
   };
 
   const uploadImages = async () => {
+    if (isDemoMode) return localImageUrls(followImages);
     const urls = [];
     for (const img of followImages) {
       if (img.uri && !img.uri.startsWith('http')) {
@@ -153,13 +156,13 @@ export default function CustomerDetailScreen({ route, navigation }) {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>;
   if (!cust) return <View style={styles.center}><Text>信息加载失败</Text></View>;
 
-  const trendLabels = trend.slice(-6).map(t => t.label || '');
+  const trendLabels = trend.slice(-6).map(t => t.label || t.month || '');
   const trendData = trend.slice(-6).map(t => t.volume || 0);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="返回客户列表" onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{cust.company_name}</Text>
@@ -192,8 +195,8 @@ export default function CustomerDetailScreen({ route, navigation }) {
                 <Text style={styles.kycVal}>{cust.customer_type || '直客'}</Text>
               </View>
               <View style={styles.kycItem}>
-                <Text style={styles.kycLabel}>主要市场</Text>
-                <Text style={styles.kycVal}>{cust.main_market || '-'}</Text>
+                <Text style={styles.kycLabel}>{cust.main_market ? '主要市场' : '负责人'}</Text>
+                <Text style={styles.kycVal}>{cust.main_market || cust.owner || '未分配'}</Text>
               </View>
             </View>
             <View style={styles.kycRow}>
@@ -202,8 +205,8 @@ export default function CustomerDetailScreen({ route, navigation }) {
                 <Text style={styles.kycVal}>{cust.main_category || '-'}</Text>
               </View>
               <View style={styles.kycItem}>
-                <Text style={styles.kycLabel}>偏好品名</Text>
-                <Text style={styles.kycVal}>{cust.cargo_preferences || '-'}</Text>
+                <Text style={styles.kycLabel}>{cust.cargo_preferences ? '偏好品名' : '客户来源'}</Text>
+                <Text style={styles.kycVal}>{cust.cargo_preferences || cust.source || '待完善'}</Text>
               </View>
             </View>
             <View style={styles.kycRow}>
@@ -218,12 +221,12 @@ export default function CustomerDetailScreen({ route, navigation }) {
             </View>
             <View style={styles.kycRow}>
               <View style={styles.kycItem}>
-                <Text style={styles.kycLabel}>出口资质</Text>
-                <Text style={styles.kycVal}>{cust.export_qualification || '-'}</Text>
+                <Text style={styles.kycLabel}>{cust.export_qualification ? '出口资质' : '客户归属'}</Text>
+                <Text style={styles.kycVal}>{cust.export_qualification || cust.ownership_label || '待完善'}</Text>
               </View>
               <View style={styles.kycItem}>
-                <Text style={styles.kycLabel}>合作起始</Text>
-                <Text style={styles.kycVal}>{cust.cooperation_since || '-'}</Text>
+                <Text style={styles.kycLabel}>{cust.cooperation_since ? '合作起始' : '保护到期'}</Text>
+                <Text style={styles.kycVal}>{cust.cooperation_since || cust.protect_expire_at || '待完善'}</Text>
               </View>
             </View>
           </View>
@@ -232,11 +235,11 @@ export default function CustomerDetailScreen({ route, navigation }) {
         {/* Metrics */}
         <View style={styles.metricsRow}>
           <View style={styles.metricCard}>
-            <Text style={styles.metricVal}>{(cust.volume_mom > 0 ? '+' : '')}{(cust.volume_mom || 0).toFixed(1)}%</Text>
-            <Text style={styles.metricLbl}>货量环比 MoM</Text>
+            <Text style={[styles.metricVal, { color: cust.volume_mom < 0 ? '#C54949' : '#18836A' }]}>{(cust.volume_mom > 0 ? '+' : '')}{(cust.volume_mom || 0).toFixed(1)}%</Text>
+            <Text style={styles.metricLbl}>货量环比</Text>
           </View>
           <View style={styles.metricCard}>
-            <Text style={styles.metricVal}>{(cust.avg_monthly_revenue / 10000).toFixed(1)}万</Text>
+            <Text style={styles.metricVal}>{cust.avg_monthly_revenue == null ? '—' : `${(cust.avg_monthly_revenue / 10000).toFixed(1)}万`}</Text>
             <Text style={styles.metricLbl}>月均营收</Text>
           </View>
           <View style={styles.metricCard}>
@@ -247,17 +250,17 @@ export default function CustomerDetailScreen({ route, navigation }) {
 
         {trendData.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>6个月货量走势</Text>
+            <Text style={styles.sectionTitle}>货量趋势</Text>
             <LineChart
               data={{ labels: trendLabels, datasets: [{ data: trendData.length > 0 ? trendData : [0] }] }}
-              width={SCREEN_W - 64}
+              width={SCREEN_W - 48}
               height={180}
-              yAxisSuffix="kg"
+              yAxisSuffix=" CBM"
               chartConfig={{
                 backgroundColor: '#fff',
                 backgroundGradientFrom: '#fff',
                 backgroundGradientTo: '#fff',
-                decimalCount: 0,
+                decimalPlaces: 0,
                 color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
                 labelColor: () => '#94a3b8',
               }}
@@ -280,7 +283,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
             <View style={styles.creditCard}>
               <View style={styles.creditRow}>
                 <Text style={styles.creditLabel}>信用评分</Text>
-                <Text style={[styles.creditVal, { color: credit.credit_score >= 700 ? '#16a34a' : credit.credit_score >= 500 ? '#f59e0b' : '#dc2626' }]}>{credit.credit_score}</Text>
+                <Text style={[styles.creditVal, { color: credit.credit_score == null ? '#78869A' : credit.credit_score >= 700 ? '#16a34a' : credit.credit_score >= 500 ? '#f59e0b' : '#dc2626' }]}>{credit.credit_score ?? '未评估'}</Text>
               </View>
               <View style={styles.creditRow}>
                 <Text style={styles.creditLabel}>当前欠款</Text>
@@ -353,7 +356,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
                   <View style={styles.followImages}>
                     {(function() {
                       try {
-                        const urls = JSON.parse(a.image_urls);
+                        const urls = Array.isArray(a.image_urls) ? a.image_urls : JSON.parse(a.image_urls);
                         return urls.map((url, idx) => (
                           <TouchableOpacity key={idx} onPress={() => setPreviewImage(resolveImageUrl(url))}>
                             <Image source={{ uri: resolveImageUrl(url) }} style={styles.followThumb} />
@@ -468,7 +471,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12, backgroundColor: '#fff' },

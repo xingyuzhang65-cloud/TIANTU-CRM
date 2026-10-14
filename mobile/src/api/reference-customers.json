@@ -1,0 +1,514 @@
+[
+  {
+    "id": 1,
+    "customer_name": "深圳思科达电子有限公司",
+    "company_name": "深圳思科达电子有限公司",
+    "contact_name": "陈总",
+    "mobile": "13800138001",
+    "masked_mobile": "138****8001",
+    "hot_contact": {
+      "name": "陈总",
+      "mobile": "138****8001"
+    },
+    "source": "已登记",
+    "tags": [
+      "A",
+      "直客"
+    ],
+    "follow_status": "CLOSED",
+    "follow_status_label": "成交",
+    "ownership_status": "CLOSED_CUSTOMER",
+    "ownership_label": "成交客户",
+    "owner": "张晓明",
+    "owner_id": 1,
+    "latest_follow": {
+      "content": "发送Q2季度运输方案：美森主线+盐田备线，已确认",
+      "created_by": "张晓明",
+      "created_at": "2026-10-12T10:01:39.061Z"
+    },
+    "credit": {
+      "balance_due": 120000,
+      "days_aged": 18
+    },
+    "latest_order": {
+      "tracking_number": "SCD202604001UK",
+      "status": "delivered"
+    },
+    "lifecycle_status": "active",
+    "avg_monthly_volume": 45.5,
+    "avg_monthly_revenue": 285000,
+    "volume_mom": 12,
+    "monthly_order_count": 8,
+    "health_score": 92,
+    "main_category": "消费电子",
+    "shipping_frequency": "每周",
+    "usual_routes": "深圳→洛杉矶 / 英国",
+    "phone": "13800138001",
+    "country": "中国",
+    "customer_level": "A",
+    "customer_type": "直客",
+    "lifecycle_label": "合作中",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-07-15T10:01:39.063Z",
+    "closed_at": "2026-09-28T10:01:39.063Z"
+  },
+  {
+    "id": 2,
+    "customer_name": "义乌欧凯进出口有限公司",
+    "company_name": "义乌欧凯进出口有限公司",
+    "contact_name": "王芳",
+    "mobile": "13800138003",
+    "masked_mobile": "138****8003",
+    "hot_contact": {
+      "name": "王芳",
+      "mobile": "138****8003"
+    },
+    "source": "已登记",
+    "tags": [
+      "A",
+      "直客"
+    ],
+    "follow_status": "INTERESTED",
+    "follow_status_label": "有意向",
+    "ownership_status": "MY_CUSTOMER",
+    "ownership_label": "我的客户",
+    "owner": "李强",
+    "owner_id": 2,
+    "latest_follow": {
+      "content": "确认圣诞季备货计划，需提前预订舱位",
+      "created_by": "李强",
+      "created_at": "2026-10-11T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 350000,
+      "days_aged": 25
+    },
+    "latest_order": {
+      "tracking_number": "OKE202604001DE",
+      "status": "departed"
+    },
+    "phone": "13800138003",
+    "country": "中国",
+    "customer_level": "A",
+    "customer_type": "直客",
+    "lifecycle_status": "new",
+    "lifecycle_label": "开发中",
+    "avg_monthly_volume": 120,
+    "avg_monthly_revenue": 360000,
+    "volume_mom": 18,
+    "monthly_order_count": 12,
+    "health_score": 88,
+    "main_category": "小商品",
+    "shipping_frequency": "每周",
+    "usual_routes": "义乌→杜伊斯堡",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-07-05T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 3,
+    "customer_name": "宁波远洋国际贸易有限公司",
+    "company_name": "宁波远洋国际贸易有限公司",
+    "contact_name": "周董",
+    "mobile": "13800138006",
+    "masked_mobile": "138****8006",
+    "hot_contact": {
+      "name": "周董",
+      "mobile": "138****8006"
+    },
+    "source": "已登记",
+    "tags": [
+      "B",
+      "同行"
+    ],
+    "follow_status": "QUOTED",
+    "follow_status_label": "报价",
+    "ownership_status": "MY_CUSTOMER",
+    "ownership_label": "我的客户",
+    "owner": "张晓明",
+    "owner_id": 1,
+    "latest_follow": {
+      "content": "鹿特丹查验延误，正在协调处理",
+      "created_by": "张晓明",
+      "created_at": "2026-10-10T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 280000,
+      "days_aged": 55
+    },
+    "latest_order": {
+      "tracking_number": "NBY202605001NL",
+      "status": "customs"
+    },
+    "phone": "13800138006",
+    "country": "中国",
+    "customer_level": "B",
+    "customer_type": "同行",
+    "lifecycle_status": "negotiating",
+    "lifecycle_label": "已报价",
+    "avg_monthly_volume": 200,
+    "avg_monthly_revenue": 520000,
+    "volume_mom": -32,
+    "monthly_order_count": 16,
+    "health_score": 68,
+    "main_category": "大型设备",
+    "shipping_frequency": "每周",
+    "usual_routes": "宁波→鹿特丹",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-06-25T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 5,
+    "customer_name": "广州恒通服装贸易有限公司",
+    "company_name": "广州恒通服装贸易有限公司",
+    "contact_name": "李经理",
+    "mobile": "13800138002",
+    "masked_mobile": "138****8002",
+    "hot_contact": {
+      "name": "李经理",
+      "mobile": "138****8002"
+    },
+    "source": "已登记",
+    "tags": [
+      "C",
+      "直客"
+    ],
+    "follow_status": "TEMP_HOLD",
+    "follow_status_label": "暂时搁置",
+    "ownership_status": "MY_CUSTOMER",
+    "ownership_label": "我的客户",
+    "owner": "张晓明",
+    "owner_id": 1,
+    "latest_follow": {
+      "content": "欠款已超账期，需跟进近期无新单原因",
+      "created_by": "财务部",
+      "created_at": "2026-10-09T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 95000,
+      "days_aged": 72
+    },
+    "latest_order": {
+      "tracking_number": "HTF202605001NL",
+      "status": "departed"
+    },
+    "phone": "13800138002",
+    "country": "中国",
+    "customer_level": "C",
+    "customer_type": "直客",
+    "lifecycle_status": "active",
+    "lifecycle_label": "合作中",
+    "avg_monthly_volume": 18,
+    "avg_monthly_revenue": 68000,
+    "volume_mom": -42,
+    "monthly_order_count": 3,
+    "health_score": 55,
+    "main_category": "服装",
+    "shipping_frequency": "每月",
+    "usual_routes": "广州→欧洲",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-06-15T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 8,
+    "customer_name": "深圳星链跨境电商有限公司",
+    "company_name": "深圳星链跨境电商有限公司",
+    "contact_name": "林小姐",
+    "mobile": "13800138008",
+    "masked_mobile": "138****8008",
+    "hot_contact": {
+      "name": "林小姐",
+      "mobile": "138****8008"
+    },
+    "source": "独立开发",
+    "tags": [
+      "C",
+      "直客"
+    ],
+    "follow_status": "INITIAL_VISIT",
+    "follow_status_label": "初访",
+    "ownership_status": "MY_CUSTOMER",
+    "ownership_label": "我的客户",
+    "owner": "张晓明",
+    "owner_id": 1,
+    "latest_follow": {
+      "content": "确认 TikTok Shop 美国小包试跑需求",
+      "created_by": "张晓明",
+      "created_at": "2026-10-08T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 0,
+      "days_aged": 0
+    },
+    "latest_order": null,
+    "phone": "13800138008",
+    "country": "中国",
+    "customer_level": "C",
+    "customer_type": "直客",
+    "lifecycle_status": "new",
+    "lifecycle_label": "开发中",
+    "avg_monthly_volume": 8,
+    "avg_monthly_revenue": 32000,
+    "volume_mom": 100,
+    "monthly_order_count": 2,
+    "health_score": 80,
+    "main_category": "跨境小包",
+    "shipping_frequency": "每周",
+    "usual_routes": "深圳→美国",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-06-05T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 6,
+    "customer_name": "杭州锐思科技有限公司",
+    "company_name": "杭州锐思科技有限公司",
+    "contact_name": "赵总",
+    "mobile": "13800138004",
+    "masked_mobile": "138****8004",
+    "hot_contact": {
+      "name": "赵总",
+      "mobile": "138****8004"
+    },
+    "source": "已登记",
+    "tags": [
+      "C",
+      "同行"
+    ],
+    "follow_status": "INTERESTED",
+    "follow_status_label": "有意向",
+    "ownership_status": "MY_CUSTOMER",
+    "ownership_label": "我的客户",
+    "owner": "李强",
+    "owner_id": 2,
+    "latest_follow": {
+      "content": "客户对时效和在线轨迹追踪功能认可",
+      "created_by": "李强",
+      "created_at": "2026-10-07T10:01:39.063Z"
+    },
+    "credit": null,
+    "latest_order": null,
+    "phone": "13800138004",
+    "country": "中国",
+    "customer_level": "C",
+    "customer_type": "同行",
+    "lifecycle_status": "new",
+    "lifecycle_label": "开发中",
+    "avg_monthly_volume": 5,
+    "avg_monthly_revenue": 22000,
+    "volume_mom": 0,
+    "monthly_order_count": 1,
+    "health_score": 76,
+    "main_category": "科技产品",
+    "shipping_frequency": "不定期",
+    "usual_routes": "杭州→日韩",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-05-26T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 4,
+    "customer_name": "AmazonSeller-DE GmbH",
+    "company_name": "AmazonSeller-DE GmbH",
+    "contact_name": "Michael Braun",
+    "mobile": "+49-176-1234567",
+    "masked_mobile": "+49****4567",
+    "hot_contact": {
+      "name": "Michael Braun",
+      "mobile": "+49****4567"
+    },
+    "source": "独立开发",
+    "tags": [
+      "B",
+      "直客"
+    ],
+    "follow_status": "QUOTED",
+    "follow_status_label": "报价",
+    "ownership_status": "COMPANY_POOL",
+    "ownership_label": "公司池",
+    "owner": "",
+    "owner_id": null,
+    "pool_name": "客户公海（默认）",
+    "latest_follow": {
+      "content": "讨论CE认证产品运输要求，等待客户确认报价",
+      "created_by": "李强",
+      "created_at": "2026-10-12T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 85000,
+      "days_aged": 10
+    },
+    "latest_order": {
+      "tracking_number": "ADE202605001DE",
+      "status": "arrived"
+    },
+    "phone": "+49-176-1234567",
+    "country": "德国",
+    "customer_level": "B",
+    "customer_type": "直客",
+    "lifecycle_status": "negotiating",
+    "lifecycle_label": "已报价",
+    "avg_monthly_volume": 32,
+    "avg_monthly_revenue": 125000,
+    "volume_mom": 8,
+    "monthly_order_count": 5,
+    "health_score": 82,
+    "main_category": "Amazon FBA",
+    "shipping_frequency": "每月",
+    "usual_routes": "深圳→德国",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-05-16T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 7,
+    "customer_name": "东莞联达塑胶制品有限公司",
+    "company_name": "东莞联达塑胶制品有限公司",
+    "contact_name": "孙经理",
+    "mobile": "13800138005",
+    "masked_mobile": "138****8005",
+    "hot_contact": {
+      "name": "孙经理",
+      "mobile": "138****8005"
+    },
+    "source": "已登记",
+    "tags": [
+      "D",
+      "直客"
+    ],
+    "follow_status": "TEMP_HOLD",
+    "follow_status_label": "暂时搁置",
+    "ownership_status": "COMPANY_POOL",
+    "ownership_label": "公司池",
+    "owner": "",
+    "owner_id": null,
+    "pool_name": "客户公海（默认）",
+    "latest_follow": {
+      "content": "发送归档确认邮件，保留未来合作可能",
+      "created_by": "张晓明",
+      "created_at": "2026-10-11T10:01:39.063Z"
+    },
+    "credit": null,
+    "latest_order": null,
+    "phone": "13800138005",
+    "country": "中国",
+    "customer_level": "D",
+    "customer_type": "直客",
+    "lifecycle_status": "disqualified",
+    "lifecycle_label": "已流失",
+    "avg_monthly_volume": 0,
+    "avg_monthly_revenue": 0,
+    "volume_mom": 0,
+    "monthly_order_count": 0,
+    "health_score": 45,
+    "main_category": "塑胶制品",
+    "shipping_frequency": "暂停",
+    "usual_routes": "-",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-05-06T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 9,
+    "customer_name": "厦门拓海家居用品有限公司",
+    "company_name": "厦门拓海家居用品有限公司",
+    "contact_name": "高经理",
+    "mobile": "13800138009",
+    "masked_mobile": "138****8009",
+    "hot_contact": {
+      "name": "高经理",
+      "mobile": "138****8009"
+    },
+    "source": "独立开发",
+    "tags": [
+      "C",
+      "直客"
+    ],
+    "follow_status": "INITIAL_VISIT",
+    "follow_status_label": "初访",
+    "ownership_status": "EXPIRING_PROTECTION",
+    "ownership_label": "即将掉保",
+    "owner": "王芳",
+    "owner_id": 3,
+    "latest_follow": {
+      "content": "客户要求欧洲海派报价，需及时继续跟进",
+      "created_by": "王芳",
+      "created_at": "2026-10-10T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 15000,
+      "days_aged": 12
+    },
+    "latest_order": null,
+    "phone": "13800138009",
+    "country": "中国",
+    "customer_level": "C",
+    "customer_type": "直客",
+    "lifecycle_status": "new",
+    "lifecycle_label": "开发中",
+    "avg_monthly_volume": 14.5,
+    "avg_monthly_revenue": 48000,
+    "volume_mom": -12,
+    "monthly_order_count": 2,
+    "health_score": 70,
+    "main_category": "家居用品",
+    "shipping_frequency": "每月",
+    "usual_routes": "厦门→欧洲",
+    "protect_expire_at": "2026-10-15",
+    "created_at": "2026-04-26T10:01:39.063Z",
+    "closed_at": null
+  },
+  {
+    "id": 10,
+    "customer_name": "佛山海迅贸易黑名单样例",
+    "company_name": "佛山海迅贸易黑名单样例",
+    "contact_name": "郑某",
+    "mobile": "13800138010",
+    "masked_mobile": "138****8010",
+    "hot_contact": {
+      "name": "郑某",
+      "mobile": "138****8010"
+    },
+    "source": "独立开发",
+    "tags": [
+      "D",
+      "同行"
+    ],
+    "follow_status": "TEMP_HOLD",
+    "follow_status_label": "暂时搁置",
+    "ownership_status": "COMPANY_POOL",
+    "ownership_label": "公司池",
+    "owner": "",
+    "owner_id": null,
+    "pool_name": "客户公海（默认）",
+    "latest_follow": {
+      "content": "资料缺失且货品疑似侵权，保留为黑名单样例",
+      "created_by": "风控部",
+      "created_at": "2026-10-09T10:01:39.063Z"
+    },
+    "credit": {
+      "balance_due": 0,
+      "days_aged": 0
+    },
+    "latest_order": null,
+    "phone": "13800138010",
+    "country": "中国",
+    "customer_level": "D",
+    "customer_type": "同行",
+    "lifecycle_status": "disqualified",
+    "lifecycle_label": "已流失",
+    "avg_monthly_volume": 0,
+    "avg_monthly_revenue": 0,
+    "volume_mom": -100,
+    "monthly_order_count": 0,
+    "health_score": 20,
+    "main_category": "贸易品",
+    "shipping_frequency": "暂停",
+    "usual_routes": "-",
+    "protect_expire_at": "2026-11-12",
+    "created_at": "2026-04-16T10:01:39.063Z",
+    "closed_at": null
+  }
+]

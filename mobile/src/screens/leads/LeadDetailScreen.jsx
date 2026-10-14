@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
@@ -5,12 +6,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import client, { resolveBackendUrl } from '../../api/client';
+import client, { resolveBackendUrl, isDemoMode } from '../../api/client';
+import { localImageUrls } from '../../components/AppFeedback';
 import StatusBadge from '../../components/StatusBadge';
 
 const FOLLOW_STATUSES = ['未联系', '初步沟通', '意向强烈', '暂无意向', '无效信息'];
-const POOL_COLORS = { 0: 'blue', 1: 'yellow', 2: 'green' };
-const POOL_LABELS = { 0: '公海', 1: '私海', 2: '已转化' };
+const POOL_COLORS = { 0: 'blue', 1: 'yellow', 2: 'green', public: 'blue', private: 'yellow', converted: 'green' };
+const POOL_LABELS = { 0: '公海', 1: '私海', 2: '已转化', public: '公海', private: '私海', converted: '已转化' };
 
 export default function LeadDetailScreen({ route, navigation }) {
   const { leadId } = route.params;
@@ -60,6 +62,7 @@ export default function LeadDetailScreen({ route, navigation }) {
   };
 
   const uploadImages = async () => {
+    if (isDemoMode) return localImageUrls(followImages);
     const urls = [];
     for (const img of followImages) {
       if (img.uri && !img.uri.startsWith('http')) {
@@ -121,7 +124,7 @@ export default function LeadDetailScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="返回线索列表" onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>线索详情</Text>
@@ -150,9 +153,9 @@ export default function LeadDetailScreen({ route, navigation }) {
           <View style={styles.infoItem}><Text style={styles.infoLabel}>负责人</Text><Text style={styles.infoVal}>{lead.owner || '未分配'}</Text></View>
         </View>
 
-        {lead.lead_status === 1 && (
+        {(Number(lead.lead_status) === 1 || lead.lead_status === 'private') && (
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionBtn, styles.convertBtn]} onPress={() => handleConvert('customer')}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="转为客户" style={[styles.actionBtn, styles.convertBtn]} onPress={() => handleConvert('customer')}>
               <Text style={styles.actionBtnText}>转为客户</Text>
             </TouchableOpacity>
           </View>
@@ -186,7 +189,7 @@ export default function LeadDetailScreen({ route, navigation }) {
                 <View style={styles.followImages}>
                   {(function() {
                     try {
-                      const urls = JSON.parse(f.image_urls);
+                      const urls = Array.isArray(f.image_urls) ? f.image_urls : JSON.parse(f.image_urls);
                       return urls.map((url, idx) => (
                         <TouchableOpacity key={idx} onPress={() => setPreviewImage(resolveImageUrl(url))}>
                           <Image source={{ uri: resolveImageUrl(url) }} style={styles.followThumb} />
@@ -263,7 +266,7 @@ export default function LeadDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12, backgroundColor: '#fff' },

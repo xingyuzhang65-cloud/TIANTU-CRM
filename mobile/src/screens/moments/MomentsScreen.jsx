@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
@@ -5,7 +6,7 @@ import {
   RefreshControl, Dimensions, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import client, { resolveBackendUrl } from '../../api/client';
+import client, { resolveBackendUrl, isDemoMode } from '../../api/client';
 
 const TYPE_COLORS = {
   DAILY: { bg: '#eff6ff', text: '#2563eb', label: '日常' },
@@ -13,7 +14,7 @@ const TYPE_COLORS = {
   SYSTEM_KPI: { bg: '#fefce8', text: '#ca8a04', label: '战报' },
 };
 
-const SCREEN_W = Dimensions.get('window').width;
+const SCREEN_W = Math.min(Dimensions.get('window').width, 480);
 
 function formatTime(t) {
   if (!t) return '';
@@ -29,6 +30,11 @@ function formatTime(t) {
 
 async function uploadImages(images) {
   if (images.length === 0) return [];
+  if (isDemoMode && Platform.OS === 'web') return Promise.all(images.map(async image => {
+    const blob = image._file || await (await fetch(image.uri)).blob();
+    if (blob.size > 2000000) throw new Error('请选择 2MB 以内的图片');
+    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+  }));
   const formData = new FormData();
   images.forEach(img => {
     if (img._file) {
@@ -163,7 +169,7 @@ export default function MomentsScreen() {
           </View>
         )}
         <View style={styles.cardFooter}>
-          {m.link_client ? <Text style={styles.clientLink}>🔗 {m.link_client.company_name}</Text> : <Text style={styles.visBadge}>{m.visible_type === 'ALL' ? '🌐 全公司' : '🏢 本部门'}</Text>}
+          {m.link_client ? <Text style={styles.clientLink}>关联客户：{m.link_client.company_name}</Text> : <Text style={styles.visBadge}>{m.visible_type === 'ALL' ? '全公司' : '本部门'}</Text>}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(m.id)}>
               <Ionicons name={m.user_liked ? 'heart' : 'heart-outline'} size={16} color={m.user_liked ? '#ef4444' : '#94a3b8'} />
@@ -182,7 +188,7 @@ export default function MomentsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>📱 团队广场</Text>
+        <Text accessibilityRole="header" style={styles.title}>团队动态</Text>
         <TouchableOpacity style={styles.postBtn} onPress={() => setComposeVisible(true)}>
           <Ionicons name="create-outline" size={18} color="#fff" />
           <Text style={styles.postBtnText}>发布</Text>
@@ -269,7 +275,7 @@ export default function MomentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 14, backgroundColor: '#fff' },
   title: { fontSize: 22, fontWeight: '700', color: '#0f172a' },

@@ -1,3 +1,5 @@
+import { copyText } from '../../components/AppFeedback';
+import { createAppStyles } from '../../components/AppUI';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, RefreshControl,
@@ -10,9 +12,9 @@ import EmptyState from '../../components/EmptyState';
 
 const STATUS_FILTERS = [
   { key: 'all', label: '全部' },
-  { key: 'sea', label: '海运在途' },
-  { key: 'air', label: '空运在途' },
-  { key: 'lastmile', label: '尾程派送中' },
+  { key: 'sea', label: '海运' },
+  { key: 'air', label: '空运' },
+  { key: 'lastmile', label: '尾程' },
 ];
 
 const STATUS_COLORS = {
@@ -37,7 +39,7 @@ function formatTime(t) {
   return d.toLocaleDateString('zh-CN');
 }
 
-export default function TrackingHomeScreen({ navigation }) {
+export default function TrackingHomeScreen({ navigation, embedded = false }) {
   const [activeTab, setActiveTab] = useState('tracking');
 
   // Tracking state
@@ -96,7 +98,7 @@ export default function TrackingHomeScreen({ navigation }) {
 
   const copyTracking = (order) => {
     const text = `📦 运单号: ${order.tracking_number}\n路线: ${order.route_detail}\n货物: ${order.cargo_desc}\n状态: ${order.status_label}\n起运: ${order.origin} → 目的: ${order.destination}\nETA: ${order.eta || '待定'}\n最新动态: ${order.latest_event || '暂无'}`;
-    Alert.alert('已复制', text);
+    copyText(text);
   };
 
   const eventTypeLabel = (t) => {
@@ -200,9 +202,11 @@ export default function TrackingHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {!embedded && (
       <View style={styles.header}>
         <Text style={styles.title}>运踪</Text>
       </View>
+      )}
 
       {/* Segmented control */}
       <View style={styles.segmentedBar}>
@@ -228,9 +232,6 @@ export default function TrackingHomeScreen({ navigation }) {
             <Ionicons name="search" size={18} color="#94a3b8" />
             <TextInput style={styles.searchInput} placeholder="搜索单号/提单号/柜号/货描..." value={keyword} onChangeText={setKeyword} onSubmitEditing={fetchOrders} />
             {keyword ? <TouchableOpacity onPress={() => setKeyword('')}><Ionicons name="close-circle" size={18} color="#94a3b8" /></TouchableOpacity> : null}
-            <TouchableOpacity>
-              <Ionicons name="qr-code-outline" size={20} color="#2563eb" />
-            </TouchableOpacity>
           </View>
 
           {/* Filter chips */}
@@ -351,7 +352,7 @@ export default function TrackingHomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12, backgroundColor: '#fff' },
   title: { fontSize: 22, fontWeight: '700', color: '#0f172a' },

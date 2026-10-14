@@ -1,3 +1,4 @@
+import { createAppStyles } from '../../components/AppUI';
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -65,7 +66,7 @@ export default function RegisterScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAppStyles({
   container: { flexGrow: 1, backgroundColor: '#f0f5ff', paddingBottom: 40 },
   header: { alignItems: 'center', paddingTop: 60, paddingBottom: 30 },
   logo: { fontSize: 48, marginBottom: 10 },

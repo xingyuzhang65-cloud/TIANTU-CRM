@@ -2,7 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import AuthStack from './AuthStack';
-import MainTabs from './MainTabs';
+import MainTabs from './MainTabsV2';
 
 export default function AppNavigator() {
   const { isLoading, token } = useAuth();
